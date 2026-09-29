@@ -2,9 +2,10 @@ import { useState, useEffect, useRef } from 'react'
 import {
   Heart, ClipboardList, Save, Check, AlertCircle,
   Phone, Mail, Clock, ThumbsUp, ThumbsDown, User, Upload, X,
-  ChevronLeft, ChevronRight,
+  ChevronLeft, ChevronRight, Loader2, Pencil,
 } from 'lucide-react'
 import api from '../lib/api'
+import ModalAprobarAdopcion from './ModalAprobarAdopcion'
 
 // ─── ESTILOS COMPARTIDOS ──────────────────────────────────────────────────────
 const eCard  = 'bg-white/70 backdrop-blur-md rounded-2xl border border-white/50 shadow-xl'
@@ -17,103 +18,6 @@ const eBoton = 'flex items-center justify-center gap-2 py-2.5 px-4 bg-[#765A05] 
 const PESTANAS = [
   { id: 'registro',    etiqueta: 'Registro de Paciente',   Icono: Heart         },
   { id: 'solicitudes', etiqueta: 'Gestión de Solicitudes', Icono: ClipboardList },
-]
-
-// ─── CATÁLOGO MOCK — pacientes registrados (fallback mientras carga backend) ──
-const REGISTROS_MOCK = [
-  {
-    ADOPCI_ID: 101,
-    ADOPCI_FT: 'https://images.unsplash.com/photo-1543466835-00a7907e9de1?auto=format&fit=crop&w=120&q=80',
-    ADOPCI_NO: 'Boby',
-    ADOPCI_ES: 'Canino',
-    ADOPCI_SE: 'Macho',
-    ADOPCI_RA: 'Mestizo',
-    ADOPCI_CO: 'Marrón',
-    ADOPCI_FN: '2024-03-15',
-    ADOPCI_PE: '12.5',
-    ADOPCI_DE: 'Animal sociable, bueno con niños. Rescatado de la vía pública en buen estado de salud.',
-    ADOPCI_ST: 'DISPONIBLE',
-  },
-  {
-    ADOPCI_ID: 102,
-    ADOPCI_FT: 'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?auto=format&fit=crop&w=120&q=80',
-    ADOPCI_NO: 'Luna',
-    ADOPCI_ES: 'Felino',
-    ADOPCI_SE: 'Hembra',
-    ADOPCI_RA: 'Doméstico pelo corto',
-    ADOPCI_CO: 'Blanco y negro',
-    ADOPCI_FN: '2025-01-20',
-    ADOPCI_PE: '3.2',
-    ADOPCI_DE: 'Muy cariñosa. Desparasitada y vacunada. Ideal para espacios pequeños.',
-    ADOPCI_ST: 'DISPONIBLE',
-  },
-  {
-    ADOPCI_ID: 103,
-    ADOPCI_FT: 'https://images.unsplash.com/photo-1530281700549-e82e7bf110d6?auto=format&fit=crop&w=120&q=80',
-    ADOPCI_NO: 'Max',
-    ADOPCI_ES: 'Canino',
-    ADOPCI_SE: 'Macho',
-    ADOPCI_RA: 'Golden Retriever cruzado',
-    ADOPCI_CO: 'Dorado',
-    ADOPCI_FN: '2025-09-10',
-    ADOPCI_PE: '8.0',
-    ADOPCI_DE: 'Cachorro juguetón y enérgico. Requiere espacio exterior. Esterilizado.',
-    ADOPCI_ST: 'DISPONIBLE',
-  },
-  {
-    ADOPCI_ID: 104,
-    ADOPCI_FT: 'https://images.unsplash.com/photo-1601758177266-bc599de87707?auto=format&fit=crop&w=120&q=80',
-    ADOPCI_NO: 'Rocky',
-    ADOPCI_ES: 'Canino',
-    ADOPCI_SE: 'Macho',
-    ADOPCI_RA: 'Rottweiler Mestizo',
-    ADOPCI_CO: 'Negro con café',
-    ADOPCI_FN: '2023-05-08',
-    ADOPCI_PE: '28.4',
-    ADOPCI_DE: 'Leal y protector. Requiere adoptante con experiencia en razas grandes.',
-    ADOPCI_ST: 'EN PROCESO',
-  },
-  {
-    ADOPCI_ID: 105,
-    ADOPCI_FT: 'https://images.unsplash.com/photo-1518791841217-8f162f1e1131?auto=format&fit=crop&w=120&q=80',
-    ADOPCI_NO: 'Bella',
-    ADOPCI_ES: 'Felino',
-    ADOPCI_SE: 'Hembra',
-    ADOPCI_RA: 'Siamés cruzado',
-    ADOPCI_CO: 'Caramelo con puntas oscuras',
-    ADOPCI_FN: '2024-07-22',
-    ADOPCI_PE: '4.1',
-    ADOPCI_DE: 'Independiente pero afectuosa. Convive bien con otros felinos.',
-    ADOPCI_ST: 'ADOPTADO',
-  },
-]
-
-// ─── SOLICITUDES MOCK ─────────────────────────────────────────────────────────
-const SOLICITUDES_MOCK = [
-  {
-    SOL_ID:      1,
-    SOL_FECHA:   '2026-07-01',
-    SOL_ESTADO:  'PENDIENTE',
-    SOL_MENSAJE: 'Tengo casa amplia con jardín. Trabajo desde casa y puedo dedicarle tiempo completo. Tengo experiencia previa con animales rescatados.',
-    SOLICITANTE: { nombre: 'María García',  cedula: 'V-12.345.678', telefono: '0414-1234567', email: 'maria@gmail.com'        },
-    PACIENTE:    { ADOPCI_ID: 101, ADOPCI_NO: 'Boby', ADOPCI_ES: 'Canino', ADOPCI_SE: 'Macho',  ADOPCI_FT: 'https://images.unsplash.com/photo-1543466835-00a7907e9de1?auto=format&fit=crop&w=200&q=80' },
-  },
-  {
-    SOL_ID:      2,
-    SOL_FECHA:   '2026-06-29',
-    SOL_ESTADO:  'PENDIENTE',
-    SOL_MENSAJE: 'Vivo en apartamento pero salgo dos veces al día. Mi familia está completamente de acuerdo con la adopción.',
-    SOLICITANTE: { nombre: 'Carlos Méndez', cedula: 'V-9.876.543',  telefono: '0426-9876543', email: 'carlos.m@hotmail.com'   },
-    PACIENTE:    { ADOPCI_ID: 102, ADOPCI_NO: 'Luna', ADOPCI_ES: 'Felino', ADOPCI_SE: 'Hembra', ADOPCI_FT: 'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?auto=format&fit=crop&w=200&q=80' },
-  },
-  {
-    SOL_ID:      3,
-    SOL_FECHA:   '2026-06-28',
-    SOL_ESTADO:  'PENDIENTE',
-    SOL_MENSAJE: 'Soy veterinaria y tengo toda la capacidad para cuidar al animal. Busco compañero para mi trabajo remoto.',
-    SOLICITANTE: { nombre: 'Ana Rojas',     cedula: 'V-15.432.100', telefono: '0412-5554433', email: 'ana.rojas@vet.com'      },
-    PACIENTE:    { ADOPCI_ID: 103, ADOPCI_NO: 'Max',  ADOPCI_ES: 'Canino', ADOPCI_SE: 'Macho',  ADOPCI_FT: 'https://images.unsplash.com/photo-1530281700549-e82e7bf110d6?auto=format&fit=crop&w=200&q=80' },
-  },
 ]
 
 // ─── CATÁLOGO DE RAZAS POR ESPECIE ───────────────────────────────────────────
@@ -192,37 +96,42 @@ const COLORES_ESTADO = {
 }
 
 // ─── COMPONENTE PRINCIPAL ─────────────────────────────────────────────────────
-export default function AdopcionesAdmin({ rolActivo = 'ADMINISTRADOR' }) {
+export default function AdopcionesAdmin({ rolActivo = 'ADMINISTRADOR', tabInicial = 'registro' }) {
 
-  const [tabActiva,    setTabActiva]    = useState('registro')
+  const [tabActiva,    setTabActiva]    = useState(tabInicial)
   const [enviando,     setEnviando]     = useState(false)
   const [mensaje,      setMensaje]      = useState(null)
   const [formulario,   setFormulario]   = useState(FORMULARIO_VACIO)
-  const [registros,    setRegistros]    = useState(REGISTROS_MOCK)
+  const [registros,    setRegistros]    = useState([])
   const [solicitudes,  setSolicitudes]  = useState([])
   const [procesandoId, setProcesandoId] = useState(null)
   const [archivoFoto,  setArchivoFoto]  = useState(null)
   const [previewFoto,  setPreviewFoto]  = useState(null)
   const inputArchivo = useRef(null)
+  const refFormulario = useRef(null)
   const [paginaAdopciones, setPaginaAdopciones] = useState(1)
+  const [subiendoFotoId,   setSubiendoFotoId]   = useState(null)
+  const [editandoId,       setEditandoId]       = useState(null)   // paciente en edición
+  const [aprobando,        setAprobando]        = useState(null)   // solicitud a aprobar (modal)
   const LIMIT = 10
 
   // ── Carga de datos desde el backend ──────────────────────────────────────────
-  useEffect(() => {
-    const cargarDatos = async () => {
-      try {
-        const [rAnimales, rSolicitudes] = await Promise.all([
-          api.get('/adopciones'),
-          api.get('/adopciones/solicitudes').catch(() => ({ data: { registros: [] } })),
-        ])
-        const animales = (rAnimales.data.registros ?? []).map(normalizarAnimal)
-        if (animales.length) setRegistros(animales)
-        const solsDB = rSolicitudes.data.registros ?? []
-        if (solsDB.length) setSolicitudes(solsDB.map(s => normalizarSolicitud(s, animales)))
-      } catch { /* mantiene registros mock si la carga falla */ }
+  const cargarDatos = async () => {
+    try {
+      const [rAnimales, rSolicitudes] = await Promise.all([
+        api.get('/adopciones'),
+        api.get('/adopciones/solicitudes').catch(() => ({ data: { registros: [] } })),
+      ])
+      const animales = (rAnimales.data.registros ?? []).map(normalizarAnimal)
+      setRegistros(animales)
+      const solsDB = rSolicitudes.data.registros ?? []
+      setSolicitudes(solsDB.map(s => normalizarSolicitud(s, animales)))
+    } catch {
+      setMensaje({ tipo: 'error', texto: 'No se pudo cargar la cartelera desde el servidor.' })
     }
-    cargarDatos()
-  }, [])
+  }
+
+  useEffect(() => { cargarDatos() }, [])
 
   // ── Helpers ───────────────────────────────────────────────────────────────────
   const mostrarMensaje = (tipo, texto) => {
@@ -233,6 +142,30 @@ export default function AdopcionesAdmin({ rolActivo = 'ADMINISTRADOR' }) {
   const cambiarFormulario = (campo, valor) =>
     setFormulario(prev => ({ ...prev, [campo]: valor }))
 
+  // ── Agregar o cambiar la foto de un paciente ya registrado — PATCH ───────────
+  const cambiarFotoPaciente = async (animal, e) => {
+    const archivo = e.target.files?.[0]
+    e.target.value = ''
+    if (!archivo) return
+    if (archivo.size > 5 * 1024 * 1024) {
+      mostrarMensaje('error', 'La imagen supera el máximo de 5 MB.')
+      return
+    }
+    setSubiendoFotoId(animal.ADOPCI_ID)
+    try {
+      const datos = new FormData()
+      datos.append('foto', archivo, archivo.name)
+      const { data } = await api.patch(`/adopciones/${animal.ADOPCI_ID}/foto`, datos)
+      const nuevaFoto = data.paciente?.adopci_ft ?? null
+      setRegistros(prev => prev.map(a => (a.ADOPCI_ID === animal.ADOPCI_ID ? { ...a, ADOPCI_FT: nuevaFoto } : a)))
+      mostrarMensaje('exito', `Foto de "${animal.ADOPCI_NO}" actualizada.`)
+    } catch (error) {
+      mostrarMensaje('error', error.response?.data?.mensaje ?? 'No se pudo subir la foto.')
+    } finally {
+      setSubiendoFotoId(null)
+    }
+  }
+
   // ── Limpiar foto seleccionada ─────────────────────────────────────────────────
   const limpiarFoto = () => {
     if (previewFoto) URL.revokeObjectURL(previewFoto)
@@ -241,7 +174,51 @@ export default function AdopcionesAdmin({ rolActivo = 'ADMINISTRADOR' }) {
     if (inputArchivo.current) inputArchivo.current.value = ''
   }
 
-  // ── Registro de nuevo paciente — POST ─────────────────────────────────────────
+  // ── Edición de un paciente: carga sus datos en el mismo formulario ───────────
+  const iniciarEdicion = (animal) => {
+    limpiarFoto()
+    setEditandoId(animal.ADOPCI_ID)
+    setFormulario({
+      nombre:           animal.ADOPCI_NO ?? '',
+      especie:          animal.ADOPCI_ES ?? '',
+      sexo:             animal.ADOPCI_SE ?? '',
+      raza:             animal.ADOPCI_RA ?? '',
+      color:            animal.ADOPCI_CO ?? '',
+      fecha_nacimiento: (animal.ADOPCI_FN ?? '').toString().slice(0, 10),
+      peso:             animal.ADOPCI_PE ?? '',
+      descripcion:      animal.ADOPCI_DE ?? '',
+    })
+    setPreviewFoto(animal.ADOPCI_FT ?? null)
+    // El panel se desplaza dentro de su propio contenedor, no en la ventana
+    refFormulario.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  const cancelarEdicion = () => {
+    setEditandoId(null)
+    setFormulario(FORMULARIO_VACIO)
+    limpiarFoto()
+  }
+
+  const guardarEdicion = async () => {
+    const nombre = formulario.nombre
+    try {
+      const { data } = await api.put(`/adopciones/${editandoId}`, formulario)
+      let paciente = data.paciente
+      if (archivoFoto) {
+        const datos = new FormData()
+        datos.append('foto', archivoFoto, archivoFoto.name)
+        paciente = (await api.patch(`/adopciones/${editandoId}/foto`, datos)).data.paciente ?? paciente
+      }
+      const actualizado = normalizarAnimal(paciente)
+      setRegistros(prev => prev.map(a => (a.ADOPCI_ID === editandoId ? actualizado : a)))
+      mostrarMensaje('exito', `Datos de "${nombre}" actualizados.`)
+      cancelarEdicion()
+    } catch (error) {
+      mostrarMensaje('error', error.response?.data?.mensaje ?? 'Error al actualizar el paciente.')
+    }
+  }
+
+  // ── Registro de nuevo paciente — POST (o guardar edición — PUT) ───────────────
   const manejarRegistro = async (e) => {
     e.preventDefault()
     if (!formulario.nombre.trim() || !formulario.especie || !formulario.sexo) {
@@ -249,6 +226,11 @@ export default function AdopcionesAdmin({ rolActivo = 'ADMINISTRADOR' }) {
       return
     }
     setEnviando(true)
+    if (editandoId) {
+      await guardarEdicion()
+      setEnviando(false)
+      return
+    }
     try {
       let respuesta
       if (archivoFoto) {
@@ -286,21 +268,33 @@ export default function AdopcionesAdmin({ rolActivo = 'ADMINISTRADOR' }) {
   }
 
   // ── Procesar solicitud — PATCH ────────────────────────────────────────────────
-  const procesarSolicitud = async (id, accion) => {
-    setProcesandoId(id)
+  // Aprobar abre el modal (pide cédula y sector para el censo); rechazar es directo.
+  const procesarSolicitud = async (solicitud, accion) => {
+    if (accion === 'APROBADA') {
+      setAprobando({
+        id:          solicitud.SOL_ID,
+        solicitante: solicitud.SOLICITANTE.nombre,
+        cedula:      solicitud.SOLICITANTE.cedula,
+        mascota:     solicitud.PACIENTE.ADOPCI_NO,
+      })
+      return
+    }
+    setProcesandoId(solicitud.SOL_ID)
     try {
-      await api.patch(`/adopciones/solicitud/${id}`, { SOLIC_ES: accion })
-      setSolicitudes(prev => prev.filter(s => s.SOL_ID !== id))
-      mostrarMensaje('exito',
-        accion === 'APROBADA'
-          ? 'Solicitud aprobada. Se notificará al solicitante.'
-          : 'Solicitud rechazada y archivada en el sistema.'
-      )
-    } catch {
-      mostrarMensaje('error', 'Sin conexión con el servidor.')
+      await api.patch(`/adopciones/solicitud/${solicitud.SOL_ID}`, { SOLIC_ES: accion })
+      mostrarMensaje('exito', 'Solicitud rechazada y archivada en el sistema.')
+      await cargarDatos()   // el animal puede volver a DISPONIBLE
+    } catch (error) {
+      mostrarMensaje('error', error.response?.data?.mensaje ?? 'Sin conexión con el servidor.')
     } finally {
       setProcesandoId(null)
     }
+  }
+
+  const adopcionAprobada = async (respuesta) => {
+    setAprobando(null)
+    mostrarMensaje('exito', respuesta.mensaje ?? 'Adopción aprobada.')
+    await cargarDatos()   // el animal pasa a ADOPTADO y se rechazan las demás solicitudes
   }
 
   // ── Derivados ─────────────────────────────────────────────────────────────────
@@ -363,10 +357,15 @@ export default function AdopcionesAdmin({ rolActivo = 'ADMINISTRADOR' }) {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
             {/* ── Formulario de alta ─────────────────────────────────────────── */}
-            <div className={eCard + ' p-6'}>
-              <p className={eSec}><Heart className="w-3.5 h-3.5" /> Alta de Nuevo Paciente</p>
+            <div ref={refFormulario} className={eCard + ' p-6 scroll-mt-4'}>
+              <p className={eSec}>
+                {editandoId ? <Pencil className="w-3.5 h-3.5" /> : <Heart className="w-3.5 h-3.5" />}
+                {editandoId ? 'Editar Paciente' : 'Alta de Nuevo Paciente'}
+              </p>
               <p className="text-xs text-gray-400 mt-1 mb-5">
-                Complete los datos del animal para registrarlo en la cartelera de adopción pública.
+                {editandoId
+                  ? 'Corrija los datos del animal y guarde los cambios.'
+                  : 'Complete los datos del animal para registrarlo en la cartelera de adopción pública.'}
               </p>
 
               <form onSubmit={manejarRegistro} className="space-y-3.5">
@@ -423,6 +422,10 @@ export default function AdopcionesAdmin({ rolActivo = 'ADMINISTRADOR' }) {
                     <option value="">
                       {formulario.especie ? 'Seleccionar raza…' : 'Seleccione especie primero'}
                     </option>
+                    {/* Al editar, la raza guardada puede no estar en la lista sugerida */}
+                    {formulario.raza && !(RAZAS[formulario.especie] ?? []).includes(formulario.raza) && (
+                      <option value={formulario.raza}>{formulario.raza}</option>
+                    )}
                     {(RAZAS[formulario.especie] ?? []).map(r => (
                       <option key={r} value={r}>{r}</option>
                     ))}
@@ -524,8 +527,16 @@ export default function AdopcionesAdmin({ rolActivo = 'ADMINISTRADOR' }) {
                 <button type="submit" disabled={enviando || !formularioCompleto}
                   className={eBoton + ' w-full'}>
                   <Save className="w-4 h-4" />
-                  {enviando ? 'Registrando…' : 'Registrar en Cartelera Pública'}
+                  {editandoId
+                    ? (enviando ? 'Guardando…' : 'Guardar Cambios')
+                    : (enviando ? 'Registrando…' : 'Registrar en Cartelera Pública')}
                 </button>
+                {editandoId && (
+                  <button type="button" onClick={cancelarEdicion}
+                    className="mx-auto flex items-center gap-1 text-[11px] font-medium text-red-500 hover:text-red-700 transition-colors">
+                    <X className="w-3 h-3" /> Cancelar edición
+                  </button>
+                )}
               </form>
             </div>
 
@@ -540,8 +551,12 @@ export default function AdopcionesAdmin({ rolActivo = 'ADMINISTRADOR' }) {
                   <div className="bg-white rounded-2xl overflow-hidden border border-slate-200/80 shadow-xl">
 
                     {previewFoto ? (
-                      <img src={previewFoto} alt={formulario.nombre || 'Paciente'}
-                        className="w-full h-44 object-cover" />
+                      <div className="relative h-44 overflow-hidden bg-gray-100">
+                        <img src={previewFoto} alt="" aria-hidden="true"
+                          className="absolute inset-0 w-full h-full object-cover blur-xl scale-110 opacity-70" />
+                        <img src={previewFoto} alt={formulario.nombre || 'Paciente'}
+                          className="relative w-full h-full object-contain" />
+                      </div>
                     ) : (
                       <div className="h-44 bg-gradient-to-br from-[#FFEFD1] to-[#D4AC4E]/20 flex items-center justify-center">
                         <Heart className="w-16 h-16 text-[#D4AC4E]/40" />
@@ -636,6 +651,7 @@ export default function AdopcionesAdmin({ rolActivo = 'ADMINISTRADOR' }) {
                         <th className="text-left px-3 py-3 font-bold text-[#765A05] uppercase tracking-wider">Peso</th>
                         <th className="text-left px-3 py-3 font-bold text-[#765A05] uppercase tracking-wider">F. Nacimiento</th>
                         <th className="text-left px-3 py-3 font-bold text-[#765A05] uppercase tracking-wider">Estado</th>
+                        <th className="text-right px-3 py-3 font-bold text-[#765A05] uppercase tracking-wider">Acciones</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100/80">
@@ -643,15 +659,29 @@ export default function AdopcionesAdmin({ rolActivo = 'ADMINISTRADOR' }) {
                         <tr key={animal.ADOPCI_ID}
                           className="hover:bg-[#FFDF96]/10 transition-colors">
                           <td className="px-3 py-2.5">
-                            {animal.ADOPCI_FT ? (
-                              <img src={animal.ADOPCI_FT} alt={animal.ADOPCI_NO}
-                                className="w-10 h-10 object-cover rounded-xl border border-gray-200"
-                                onError={e => { e.currentTarget.style.display = 'none' }} />
-                            ) : (
-                              <div className="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center border border-dashed border-gray-300">
-                                <Heart className="w-4 h-4 text-gray-300" />
+                            {/* Clic en la foto → agregar o cambiar la imagen del paciente */}
+                            <label title={animal.ADOPCI_FT ? 'Cambiar foto' : 'Agregar foto'}
+                              className="relative block w-10 h-10 cursor-pointer group">
+                              {animal.ADOPCI_FT ? (
+                                <img src={animal.ADOPCI_FT} alt={animal.ADOPCI_NO}
+                                  className="w-10 h-10 object-cover rounded-xl border border-gray-200"
+                                  onError={e => { e.currentTarget.style.display = 'none' }} />
+                              ) : (
+                                <div className="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center border border-dashed border-gray-300">
+                                  <Heart className="w-4 h-4 text-gray-300" />
+                                </div>
+                              )}
+                              <div className={`absolute inset-0 rounded-xl bg-black/40 flex items-center justify-center transition-opacity ${
+                                subiendoFotoId === animal.ADOPCI_ID ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                              }`}>
+                                {subiendoFotoId === animal.ADOPCI_ID
+                                  ? <Loader2 className="w-3.5 h-3.5 text-white animate-spin" />
+                                  : <Upload className="w-3.5 h-3.5 text-white" />}
                               </div>
-                            )}
+                              <input type="file" accept="image/*" className="sr-only"
+                                disabled={subiendoFotoId !== null}
+                                onChange={e => cambiarFotoPaciente(animal, e)} />
+                            </label>
                           </td>
                           <td className="px-3 py-2.5">
                             <p className="font-bold text-gray-900">{animal.ADOPCI_NO}</p>
@@ -678,6 +708,12 @@ export default function AdopcionesAdmin({ rolActivo = 'ADMINISTRADOR' }) {
                               ${COLORES_ESTADO[animal.ADOPCI_ST] ?? 'bg-gray-100 text-gray-500 border border-gray-200'}`}>
                               {animal.ADOPCI_ST ?? 'SIN ESTADO'}
                             </span>
+                          </td>
+                          <td className="px-3 py-2.5 text-right">
+                            <button onClick={() => iniciarEdicion(animal)}
+                              className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-[#765A05] hover:bg-[#FFDF96]/20 border border-gray-200 hover:border-[#FFDF96]/40 px-2.5 py-1.5 rounded-lg transition-all cursor-pointer">
+                              <Pencil className="w-3.5 h-3.5" /> Editar
+                            </button>
                           </td>
                         </tr>
                       ))}
@@ -803,14 +839,14 @@ export default function AdopcionesAdmin({ rolActivo = 'ADMINISTRADOR' }) {
 
                   <div className="flex gap-3 pt-0.5">
                     <button
-                      onClick={() => procesarSolicitud(solicitud.SOL_ID, 'APROBADA')}
+                      onClick={() => procesarSolicitud(solicitud, 'APROBADA')}
                       disabled={procesandoId === solicitud.SOL_ID}
                       className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-sm transition-all disabled:opacity-60">
                       <ThumbsUp className="w-3.5 h-3.5" />
                       Aprobar Adopción
                     </button>
                     <button
-                      onClick={() => procesarSolicitud(solicitud.SOL_ID, 'RECHAZADA')}
+                      onClick={() => procesarSolicitud(solicitud, 'RECHAZADA')}
                       disabled={procesandoId === solicitud.SOL_ID}
                       className="flex items-center gap-2 px-5 py-2.5 bg-white hover:bg-red-50 text-red-600 border border-red-200 hover:border-red-300 text-xs font-bold rounded-xl transition-all disabled:opacity-60">
                       <ThumbsDown className="w-3.5 h-3.5" />
@@ -822,6 +858,14 @@ export default function AdopcionesAdmin({ rolActivo = 'ADMINISTRADOR' }) {
             </div>
           ))}
         </div>
+      )}
+
+      {aprobando && (
+        <ModalAprobarAdopcion
+          solicitud={aprobando}
+          onAprobada={adopcionAprobada}
+          onCerrar={() => setAprobando(null)}
+        />
       )}
     </div>
   )

@@ -6,6 +6,7 @@ import {
   ChevronLeft, ChevronRight, Loader2,
 } from 'lucide-react'
 import api from '../lib/api'
+import confirmarConClave from '../lib/confirmarConClave'
 
 // ─── CONFIGURACIÓN ────────────────────────────────────────────────────────────
 const LIMIT = 10
@@ -23,6 +24,7 @@ const normalizarVoluntario = (v) => ({
     : (v.VOLUN_NO ?? ''),
   VOLUN_CI: v.person_ce  ?? v.VOLUN_CI  ?? '',
   VOLUN_TP: v.person_tl  ?? v.VOLUN_TP  ?? '',
+  VOLUN_EM: v.person_em  ?? v.VOLUN_EM  ?? '',
   VOLUN_TS: v.volun_ts   ?? v.VOLUN_TS  ?? '',
   VOLUN_OS: v.volun_os   ?? v.VOLUN_OS  ?? '',
   VOLUN_ES: v.volun_es   ?? v.VOLUN_ES  ?? '',
@@ -36,7 +38,7 @@ const normalizarVoluntario = (v) => ({
 
 const FORM_VACIO = {
   VOLUN_NO: '', VOLUN_CI: '',
-  VOLUN_TP: '', VOLUN_TS: '',
+  VOLUN_TP: '', VOLUN_TS: '', VOLUN_EM: '',
   VOLUN_OS: '',
   VOLUN_ES: '', VOLUN_CC: '',
   VOLUN_IG: '', VOLUN_TK: '', VOLUN_FB: '', VOLUN_TW: '',
@@ -81,17 +83,13 @@ function ModalRegistro({ registro = null, onGuardar, onCerrar }) {
     e.preventDefault()
     setErrorMsg('')
 
-    if (esEdicion) {
-      onGuardar(datos)
-      return
-    }
-
     setGuardando(true)
     try {
       const payload = {
         VOLUN_NO:  datos.VOLUN_NO,
         PERSON_CE: datos.VOLUN_CI,
         PERSON_TL: datos.VOLUN_TP,
+        PERSON_EM: datos.VOLUN_EM  || null,
         VOLUN_TS:  datos.VOLUN_TS  || null,
         VOLUN_OS:  datos.VOLUN_OS,
         VOLUN_ES:  datos.VOLUN_ES  || null,
@@ -102,10 +100,12 @@ function ModalRegistro({ registro = null, onGuardar, onCerrar }) {
         VOLUN_TW:  datos.VOLUN_TW  || null,
         VOLUN_ST:  datos.VOLUN_ST,
       }
-      const respuesta = await api.post('/voluntarios', payload)
+      const respuesta = esEdicion
+        ? await api.put(`/voluntarios/${registro.VOLUN_ID}`, payload)
+        : await api.post('/voluntarios', payload)
       onGuardar(normalizarVoluntario(respuesta.data.registro))
     } catch (err) {
-      setErrorMsg(err.response?.data?.mensaje ?? 'Error al registrar el voluntario')
+      setErrorMsg(err.response?.data?.mensaje ?? (esEdicion ? 'Error al actualizar el voluntario' : 'Error al registrar el voluntario'))
     } finally {
       setGuardando(false)
     }
@@ -181,6 +181,11 @@ function ModalRegistro({ registro = null, onGuardar, onCerrar }) {
                 <label className={eLabel}>Teléfono Secundario</label>
                 <input name="VOLUN_TS" value={datos.VOLUN_TS} onChange={cambiar}
                   placeholder="04XX-XXX-XXXX (opcional)" className={eInput} />
+              </div>
+              <div className="sm:col-span-2">
+                <label className={eLabel}>Correo Electrónico</label>
+                <input type="email" name="VOLUN_EM" value={datos.VOLUN_EM} onChange={cambiar}
+                  placeholder="usuario@correo.com (opcional)" className={eInput} />
               </div>
             </div>
           </div>
@@ -296,7 +301,28 @@ export default function GestionVoluntarios({ rolActivo = 'ADMINISTRADOR' }) {
     mostrarToast('exito', 'Voluntario registrado exitosamente.')
   }
 
-  const eliminar = (id) => setVoluntarios(prev => prev.filter(v => v.VOLUN_ID !== id))
+  const eliminar = async (id) => {
+    const v = voluntarios.find(x => x.VOLUN_ID === id)
+    const eliminado = await confirmarConClave({
+      titulo:  'Eliminar Voluntario',
+      mensaje: `¿Eliminar al voluntario ${v?.VOLUN_NO ?? ''}?`,
+      accion:  (clave) => api.delete(`/voluntarios/${id}`, { data: { clave } }),
+    })
+    if (!eliminado) return
+    setVoluntarios(prev => prev.filter(x => x.VOLUN_ID !== id))
+    mostrarToast('exito', 'Voluntario eliminado.')
+  }
+
+  // Los registros hechos desde la web entran Inactivos ("En espera") hasta ser aprobados
+  const aprobar = async (v) => {
+    try {
+      await api.patch(`/voluntarios/${v.VOLUN_ID}/estado`, { VOLUN_ST: 'Activo' })
+      setVoluntarios(prev => prev.map(x => (x.VOLUN_ID === v.VOLUN_ID ? { ...x, VOLUN_ST: 'Activo' } : x)))
+      mostrarToast('exito', `Voluntario ${v.VOLUN_NO} aprobado.`)
+    } catch (err) {
+      mostrarToast('error', err.response?.data?.mensaje ?? 'No se pudo aprobar el voluntario.')
+    }
+  }
 
   const totalActivos = voluntarios.filter(v => v.VOLUN_ST === 'Activo').length
 
@@ -429,6 +455,7 @@ export default function GestionVoluntarios({ rolActivo = 'ADMINISTRADOR' }) {
                       <Phone className="w-3.5 h-3.5 text-gray-300 shrink-0" />
                       {v.VOLUN_TP || '—'}
                     </div>
+                    {v.VOLUN_EM && <p className="text-xs text-gray-400 mt-0.5 pl-5">{v.VOLUN_EM}</p>}
                   </td>
                   <td className="px-5 py-3.5">
                     <RedesIndicador IG={v.VOLUN_IG} FB={v.VOLUN_FB} TK={v.VOLUN_TK} TW={v.VOLUN_TW} />
@@ -440,6 +467,12 @@ export default function GestionVoluntarios({ rolActivo = 'ADMINISTRADOR' }) {
                     <div className="flex items-center justify-end gap-1.5">
                       {esAdmin && (
                         <>
+                          {v.VOLUN_ST === 'Inactivo' && (
+                            <button onClick={() => aprobar(v)}
+                              className="flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-[#765A05] hover:bg-[#FFDF96]/20 border border-gray-200 hover:border-[#FFDF96]/40 px-2.5 py-1.5 rounded-lg transition-all cursor-pointer">
+                              <ShieldCheck className="w-3.5 h-3.5" /> Aprobar
+                            </button>
+                          )}
                           <button onClick={() => setEditando(v)}
                             className="flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-[#765A05] hover:bg-[#FFDF96]/20 border border-gray-200 hover:border-[#FFDF96]/40 px-2.5 py-1.5 rounded-lg transition-all cursor-pointer">
                             <Pencil className="w-3.5 h-3.5" /> Editar

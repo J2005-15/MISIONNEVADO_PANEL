@@ -6,6 +6,7 @@ import {
   ChevronLeft, ChevronRight,
 } from 'lucide-react'
 import api from '../lib/api'
+import confirmarConClave from '../lib/confirmarConClave'
 
 // ─── CONFIGURACIÓN ───────────────────────────────────────────────────────────
 const LIMIT = 10
@@ -467,8 +468,17 @@ export default function ControlColaboraciones({ rolActivo = 'ADMINISTRADOR' }) {
     setModalNuevo(false)
   }
 
-  const eliminar = (id) =>
-    setColaboraciones(prev => prev.filter(c => c.DONACI_ID !== id))
+  const eliminar = async (id) => {
+    const c = colaboraciones.find(x => x.DONACI_ID === id)
+    const eliminado = await confirmarConClave({
+      titulo:  'Eliminar Colaboración',
+      mensaje: `¿Eliminar la colaboración de ${c?.PERSON_NO ?? ''}?`,
+      accion:  (clave) => api.delete(`/colaboraciones/${id}`, { data: { clave } }),
+    })
+    if (!eliminado) return
+    setColaboraciones(prev => prev.filter(x => x.DONACI_ID !== id))
+    mostrarToast('exito', 'Colaboración eliminada.')
+  }
 
   const totalRecibido  = colaboraciones.filter(c => c.DONACI_ES === 'Recibida').length
   const totalPendiente = colaboraciones.filter(c => c.DONACI_ES === 'Pendiente').length

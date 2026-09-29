@@ -4,6 +4,7 @@ import {
   Save, Check, AlertCircle, Monitor, Shield, Globe,
   Upload, Eye, EyeOff,
 } from 'lucide-react'
+import api from '../lib/api'
 
 // ─── ESTILOS COMPARTIDOS ──────────────────────────────────────────────────────
 const eCard  = 'bg-white/70 backdrop-blur-md rounded-2xl border border-white/50 shadow-xl'
@@ -41,22 +42,6 @@ const ESTADISTICAS_INICIALES = [
   { id: 'EST-3', valor: '24/7', etiqueta: 'Atención Continua'   },
 ]
 
-// Datos del backend de adopciones — se carga con fetch; estos son el fallback
-const PACIENTES_MOCK = [
-  { ADOPCI_ID: 101, ADOPCI_FT: 'https://images.unsplash.com/photo-1543466835-00a7907e9de1?auto=format&fit=crop&w=600&q=80', ADOPCI_NO: 'Boby',  ADOPCI_ES: 'Canino', ADOPCI_ED: '2 Años',  ADOPCI_TA: 'Mediano', ADOPCI_ST: 'DISPONIBLE', visibleEnPortada: true  },
-  { ADOPCI_ID: 102, ADOPCI_FT: 'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?auto=format&fit=crop&w=600&q=80', ADOPCI_NO: 'Luna',  ADOPCI_ES: 'Felino', ADOPCI_ED: '1 Año',   ADOPCI_TA: 'Pequeño', ADOPCI_ST: 'DISPONIBLE', visibleEnPortada: true  },
-  { ADOPCI_ID: 103, ADOPCI_FT: 'https://images.unsplash.com/photo-1530281700549-e82e7bf110d6?auto=format&fit=crop&w=600&q=80', ADOPCI_NO: 'Max',   ADOPCI_ES: 'Canino', ADOPCI_ED: '4 Meses', ADOPCI_TA: 'Pequeño', ADOPCI_ST: 'DISPONIBLE', visibleEnPortada: true  },
-  { ADOPCI_ID: 104, ADOPCI_FT: 'https://images.unsplash.com/photo-1601758177266-bc599de87707?auto=format&fit=crop&w=600&q=80', ADOPCI_NO: 'Rocky', ADOPCI_ES: 'Canino', ADOPCI_ED: '3 Años',  ADOPCI_TA: 'Grande',  ADOPCI_ST: 'DISPONIBLE', visibleEnPortada: false },
-  { ADOPCI_ID: 105, ADOPCI_FT: 'https://images.unsplash.com/photo-1518791841217-8f162f1e1131?auto=format&fit=crop&w=600&q=80', ADOPCI_NO: 'Bella', ADOPCI_ES: 'Felino', ADOPCI_ED: '2 Años',  ADOPCI_TA: 'Mediano', ADOPCI_ST: 'EN PROCESO', visibleEnPortada: false },
-  { ADOPCI_ID: 106, ADOPCI_FT: 'https://images.unsplash.com/photo-1548199973-03cce0bbc87b?auto=format&fit=crop&w=600&q=80', ADOPCI_NO: 'Zeus',  ADOPCI_ES: 'Canino', ADOPCI_ED: '5 Años',  ADOPCI_TA: 'Grande',  ADOPCI_ST: 'DISPONIBLE', visibleEnPortada: false },
-]
-
-// Datos del backend de jornadas — se carga con fetch; estos son el fallback
-const JORNADAS_MOCK = [
-  { JORNAD_ID: 1, NOM_JORNA: 'Gran Jornada de Vacunación',  FEC_JORNA: '15 de Julio, 2026', LUG_JORNA: 'Plaza Bolívar, La Grita', DES_JORNA: 'Vacunación antirrábica y desparasitación gratuita para toda la comunidad. ¡Asiste con tu mascota!', visibleEnPortada: true  },
-  { JORNAD_ID: 2, NOM_JORNA: 'Operativo de Esterilización', FEC_JORNA: '22 de Julio, 2026', LUG_JORNA: 'Sede Misión Nevado',      DES_JORNA: 'Esterilización a bajo costo para perros y gatos. Requiere cita previa asignada en la sede central.',  visibleEnPortada: true  },
-]
-
 const CONTACTO_INICIAL = {
   descripcion: 'Protegiendo la vida animal y gestionando rescates a través de nuestra plataforma SISCVI.',
   direccion:   'La Grita, Municipio Jáuregui, Edo. Táchira',
@@ -81,8 +66,62 @@ function BarraNavegador({ url }) {
   )
 }
 
-// ─── HELPER TOKEN ─────────────────────────────────────────────────────────────
-const obtenerToken = () => localStorage.getItem('sisvic_token') ?? ''
+// ─── TÍTULO DEL HERO: un solo texto + palabra(s) resaltada(s) ────────────────
+// Se guarda como titulo_inicio / titulo_acento / titulo_fin (lo que lee la web).
+const palabras = (t) => (t ?? '').trim().split(/\s+/).filter(Boolean)
+
+// Rango [desde, hasta] de palabras resaltadas según las tres partes guardadas
+const rangoDesdePartes = (h) => {
+  const desde = palabras(h.titulo_inicio).length
+  const cant  = palabras(h.titulo_acento).length
+  return cant ? [desde, desde + cant - 1] : null
+}
+
+const partesDesdeTitulo = (lista, rango) => rango
+  ? {
+      titulo_inicio: lista.slice(0, rango[0]).join(' '),
+      titulo_acento: lista.slice(rango[0], rango[1] + 1).join(' '),
+      titulo_fin:    lista.slice(rango[1] + 1).join(' '),
+    }
+  : { titulo_inicio: lista.join(' '), titulo_acento: '', titulo_fin: '' }
+
+// Partes con los espacios correctos para mostrar (evita "vidaanimalen")
+const partesParaMostrar =({ titulo_inicio = '', titulo_acento = '', titulo_fin = '' }) => {
+  const ini = titulo_inicio.trim(), acc = titulo_acento.trim(), fin = titulo_fin.trim()
+  return {
+    antes:   ini && (acc || fin) ? `${ini} ` : ini,
+    acento:  acc,
+    despues: fin && (ini || acc) && !/^[.,;:!?)]/.test(fin) ? ` ${fin}` : fin,
+  }
+}
+
+// ─── NORMALIZADORES (respuesta de la BD → forma que usa esta vista) ──────────
+const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+const formatearFecha = (valor) => {
+  if (!valor) return ''
+  const [a, m, d] = valor.toString().slice(0, 10).split('-')
+  return `${parseInt(d)} de ${MESES[parseInt(m) - 1]}, ${a}`
+}
+
+const normalizarPaciente = (p) => ({
+  ADOPCI_ID: p.adopci_id,
+  ADOPCI_FT: p.adopci_ft,
+  ADOPCI_NO: p.adopci_no,
+  ADOPCI_ES: p.adopci_es ?? '',
+  ADOPCI_ED: p.adopci_ed ?? '',
+  ADOPCI_TA: p.adopci_ta ?? '',
+  ADOPCI_ST: p.adopci_st,
+  visibleEnPortada: Boolean(p.adopci_vw),
+})
+
+const normalizarJornada = (j) => ({
+  JORNAD_ID: j.jornad_id,
+  NOM_JORNA: j.jornad_no,
+  FEC_JORNA: formatearFecha(j.jornad_fe),
+  LUG_JORNA: j.jornad_lu || j.sector_no || '',
+  DES_JORNA: j.jornad_de ?? '',
+  visibleEnPortada: Boolean(j.jornad_vw),
+})
 
 // ─── COMPONENTE PRINCIPAL ─────────────────────────────────────────────────────
 export default function GestionWeb({ rolActivo = 'ADMINISTRADOR' }) {
@@ -95,40 +134,38 @@ export default function GestionWeb({ rolActivo = 'ADMINISTRADOR' }) {
   // ── Datos ─────────────────────────────────────────────────────────────────────
   const [hero,         setHero]         = useState(HERO_INICIAL)
   const [estadisticas, setEstadisticas] = useState(ESTADISTICAS_INICIALES)
-  const [pacientes,    setPacientes]    = useState(PACIENTES_MOCK)
-  const [jornadas,     setJornadas]     = useState(JORNADAS_MOCK)
+  const [pacientes,    setPacientes]    = useState([])
+  const [jornadas,     setJornadas]     = useState([])
   const [contacto,     setContacto]     = useState(CONTACTO_INICIAL)
+  const [tituloTexto,  setTituloTexto]  = useState(null)   // título tal como se escribe (con espacios)
 
   // ── Carga de datos desde el backend ──────────────────────────────────────────
   useEffect(() => {
+    // Contenido publicado actualmente en la web (TM_CONFIG)
+    const cargarContenido = async () => {
+      try {
+        const { data } = await api.get('/contenido-web')
+        if (data.hero) setHero(prev => ({ ...prev, ...data.hero }))
+        if (data.estadisticas?.length) setEstadisticas(data.estadisticas)
+        if (data.contacto) setContacto(prev => ({ ...prev, ...data.contacto }))
+      } catch { /* usa los valores iniciales */ }
+    }
+
     const cargarPacientes = async () => {
       try {
-        const respuesta = await fetch('/api/adopciones', {
-          headers: { 'Authorization': `Bearer ${obtenerToken()}` },
-        })
-        if (respuesta.ok) {
-          const datos = await respuesta.json()
-          setPacientes(
-            (datos.registros ?? []).map(p => ({ ...p, visibleEnPortada: true }))
-          )
-        }
+        const { data } = await api.get('/adopciones')
+        setPacientes((data.registros ?? []).map(normalizarPaciente))
       } catch { /* usa los datos mock */ }
     }
 
     const cargarJornadas = async () => {
       try {
-        const respuesta = await fetch('/api/jornadas', {
-          headers: { 'Authorization': `Bearer ${obtenerToken()}` },
-        })
-        if (respuesta.ok) {
-          const datos = await respuesta.json()
-          setJornadas(
-            (datos.jornadas ?? []).map(j => ({ ...j, visibleEnPortada: true }))
-          )
-        }
+        const { data } = await api.get('/jornadas')
+        setJornadas((data.registros ?? []).map(normalizarJornada))
       } catch { /* usa los datos mock */ }
     }
 
+    cargarContenido()
     cargarPacientes()
     cargarJornadas()
   }, [])
@@ -136,6 +173,8 @@ export default function GestionWeb({ rolActivo = 'ADMINISTRADOR' }) {
   // ── Refs para uploads ─────────────────────────────────────────────────────────
   const refImagenHero    = useRef(null)
   const refImagenFrontal = useRef(null)
+  // Archivos elegidos y aún no subidos; se suben a Cloudinary al publicar el Hero
+  const archivosHero     = useRef({ fondo: null, frontal: null })
 
   // ── RBAC ──────────────────────────────────────────────────────────────────────
   if (rolActivo !== 'ADMINISTRADOR') {
@@ -158,15 +197,12 @@ export default function GestionWeb({ rolActivo = 'ADMINISTRADOR' }) {
     setTimeout(() => setMensaje(null), 4000)
   }
 
+  // `ruta` llega como '/api/contenido-web/...'; el cliente api ya incluye '/api'
   const enviarPatch = async (ruta, cuerpo) => {
     setCargando(true)
     try {
-      const respuesta = await fetch(ruta, {
-        method:  'PATCH',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${obtenerToken()}` },
-        body:    JSON.stringify(cuerpo),
-      })
-      return respuesta.ok
+      await api.patch(ruta.replace(/^\/api/, ''), cuerpo)
+      return true
     } catch { return false }
     finally  { setCargando(false) }
   }
@@ -174,9 +210,37 @@ export default function GestionWeb({ rolActivo = 'ADMINISTRADOR' }) {
   // ── Hero ──────────────────────────────────────────────────────────────────────
   const cambiarHero = (campo, valor) => setHero(prev => ({ ...prev, [campo]: valor }))
 
+  // Título en un solo campo; tituloTexto guarda lo que se escribe (con sus espacios)
+  const textoTitulo    = tituloTexto ?? [hero.titulo_inicio, hero.titulo_acento, hero.titulo_fin].map(t => (t ?? '').trim()).filter(Boolean).join(' ')
+  const listaPalabras  = palabras(textoTitulo)
+  const rangoResaltado = rangoDesdePartes(hero)
+
+  const cambiarTitulo = (texto) => {
+    setTituloTexto(texto)
+    const lista = palabras(texto)
+    let rango = rangoResaltado
+    if (rango && rango[1] >= lista.length) rango = rango[0] < lista.length ? [rango[0], lista.length - 1] : null
+    setHero(prev => ({ ...prev, ...partesDesdeTitulo(lista, rango) }))
+  }
+
+  // Clic en una palabra: la resalta; clic en la vecina amplía; clic en la única resaltada la quita
+  const elegirPalabra = (i) => {
+    const r = rangoResaltado
+    let nuevo
+    if (!r)                            nuevo = [i, i]
+    else if (r[0] === i && r[1] === i) nuevo = null
+    else if (i === r[0] - 1)           nuevo = [i, r[1]]
+    else if (i === r[1] + 1)           nuevo = [r[0], i]
+    else                               nuevo = [i, i]
+    setHero(prev => ({ ...prev, ...partesDesdeTitulo(listaPalabras, nuevo) }))
+  }
+
+  const tituloVista = partesParaMostrar(hero)
+
   const manejarImagenHero = (e) => {
     const archivo = e.target.files[0]
     if (!archivo) return
+    archivosHero.current.fondo = archivo
     cambiarHero('imagen_local', URL.createObjectURL(archivo))
     e.target.value = ''
   }
@@ -184,13 +248,40 @@ export default function GestionWeb({ rolActivo = 'ADMINISTRADOR' }) {
   const manejarImagenFrontal = (e) => {
     const archivo = e.target.files[0]
     if (!archivo) return
+    archivosHero.current.frontal = archivo
     cambiarHero('imagen_frontal_local', URL.createObjectURL(archivo))
     e.target.value = ''
   }
 
+  const subirImagenHero = async (archivo) => {
+    const datos = new FormData()
+    datos.append('imagen', archivo, archivo.name)
+    return (await api.post('/contenido-web/imagen', datos)).data.url
+  }
+
+  // Primero sube a Cloudinary las imágenes nuevas (si las hay) y luego publica el Hero
   const guardarHero = async () => {
     const { imagen_local, imagen_frontal_local, ...heroParaEnviar } = hero
+    setCargando(true)
+    try {
+      if (archivosHero.current.fondo)   heroParaEnviar.imagen_url         = await subirImagenHero(archivosHero.current.fondo)
+      if (archivosHero.current.frontal) heroParaEnviar.imagen_frontal_url = await subirImagenHero(archivosHero.current.frontal)
+    } catch (err) {
+      setCargando(false)
+      mostrarMensaje('error', err.response?.data?.mensaje ?? 'No se pudo subir la imagen.')
+      return
+    }
     const ok = await enviarPatch('/api/contenido-web/hero', { hero: heroParaEnviar })
+    if (ok) {
+      archivosHero.current = { fondo: null, frontal: null }
+      setHero(prev => ({
+        ...prev,
+        imagen_url:           heroParaEnviar.imagen_url,
+        imagen_frontal_url:   heroParaEnviar.imagen_frontal_url,
+        imagen_local:         null,
+        imagen_frontal_local: null,
+      }))
+    }
     mostrarMensaje(ok ? 'exito' : 'error', ok ? 'Sección Hero publicada correctamente' : 'Error al guardar. Verifique la conexión.')
   }
 
@@ -355,23 +446,34 @@ export default function GestionWeb({ rolActivo = 'ADMINISTRADOR' }) {
                 onChange={e => cambiarHero('badge', e.target.value)} />
             </div>
 
-            {/* ── Título (3 partes) ── */}
+            {/* ── Título principal (un solo campo + palabra resaltada) ── */}
             <div className="rounded-xl border border-[#FFDF96]/50 bg-[#FFDF96]/10 p-3.5 space-y-3">
-              <p className="text-[10px] font-black text-[#765A05] uppercase tracking-widest">Título principal — 3 partes</p>
+              <p className="text-[10px] font-black text-[#765A05] uppercase tracking-widest">Título principal</p>
               <div>
-                <label className={eLabel}>Texto inicial</label>
-                <input className={eInput} value={hero.titulo_inicio}
-                  onChange={e => cambiarHero('titulo_inicio', e.target.value)} />
+                <label className={eLabel}>Texto del título</label>
+                <input className={eInput} value={textoTitulo}
+                  onChange={e => cambiarTitulo(e.target.value)} />
               </div>
               <div>
-                <label className={eLabel}>Texto en color dorado (acento)</label>
-                <input className={eInput} value={hero.titulo_acento}
-                  onChange={e => cambiarHero('titulo_acento', e.target.value)} />
-              </div>
-              <div>
-                <label className={eLabel}>Texto final</label>
-                <input className={eInput} value={hero.titulo_fin}
-                  onChange={e => cambiarHero('titulo_fin', e.target.value)} />
+                <label className={eLabel}>Palabra en color dorado — haga clic para elegirla</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {listaPalabras.map((palabra, i) => {
+                    const activa = rangoResaltado && i >= rangoResaltado[0] && i <= rangoResaltado[1]
+                    return (
+                      <button type="button" key={`${palabra}-${i}`} onClick={() => elegirPalabra(i)}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition-all ${
+                          activa
+                            ? 'bg-[#D4AC4E] text-[#212529] border-[#D4AC4E]'
+                            : 'bg-white text-gray-600 border-gray-200 hover:border-[#D4AC4E]/60'
+                        }`}>
+                        {palabra}
+                      </button>
+                    )
+                  })}
+                </div>
+                <p className="text-[10px] text-gray-400 mt-1.5 leading-snug">
+                  Clic en la palabra de al lado para resaltar varias seguidas; clic otra vez para quitarla.
+                </p>
               </div>
             </div>
 
@@ -424,9 +526,9 @@ export default function GestionWeb({ rolActivo = 'ADMINISTRADOR' }) {
                       {hero.badge || '—'}
                     </div>
                     <h1 className="text-[13px] font-extrabold leading-snug drop-shadow-md">
-                      {hero.titulo_inicio}
-                      <span className="text-[#D4AC4E]">{hero.titulo_acento}</span>
-                      {hero.titulo_fin}
+                      {tituloVista.antes}
+                      <span className="text-[#D4AC4E]">{tituloVista.acento}</span>
+                      {tituloVista.despues}
                     </h1>
                     <p className="text-[9px] text-white/80 leading-relaxed line-clamp-3">
                       {hero.descripcion}

@@ -6,6 +6,7 @@ import {
   ChevronLeft, ChevronRight, Loader2,
 } from 'lucide-react'
 import api from '../lib/api'
+import confirmarConClave from '../lib/confirmarConClave'
 
 // ─── CONFIGURACIÓN ────────────────────────────────────────────────────────────
 const LIMIT = 10
@@ -24,6 +25,7 @@ const normalizarProteccionista = (p) => ({
     : (p.PRTEC_NO ?? ''),
   PRTEC_CI: p.person_ce  ?? p.PRTEC_CI  ?? '',
   PRTEC_TP: p.person_tl  ?? p.PRTEC_TP  ?? '',
+  PRTEC_EM: p.person_em  ?? p.PRTEC_EM  ?? '',
   PRTEC_TS: p.prtec_ts   ?? p.PRTEC_TS  ?? '',
   PRTEC_TI: p.prtec_ti   ?? p.PRTEC_TI  ?? 'Independiente',
   PRTEC_ON: p.prtec_on   ?? p.PRTEC_ON  ?? '',
@@ -42,7 +44,7 @@ const normalizarProteccionista = (p) => ({
 
 const FORM_VACIO = {
   PRTEC_NO: '', PRTEC_CI: '',
-  PRTEC_TP: '', PRTEC_TS: '',
+  PRTEC_TP: '', PRTEC_TS: '', PRTEC_EM: '',
   PRTEC_TI: 'Independiente',
   PRTEC_ON: '', PRTEC_RF: '',
   PRTEC_ES: '', PRTEC_CC: '',
@@ -101,17 +103,13 @@ function ModalRegistro({ registro = null, onGuardar, onCerrar }) {
     e.preventDefault()
     setErrorMsg('')
 
-    if (esEdicion) {
-      onGuardar(datos)
-      return
-    }
-
     setGuardando(true)
     try {
       const payload = {
         PRTEC_NO:  datos.PRTEC_NO,
         PERSON_CE: datos.PRTEC_CI,
         PERSON_TL: datos.PRTEC_TP,
+        PERSON_EM: datos.PRTEC_EM  || null,
         PRTEC_TS:  datos.PRTEC_TS  || null,
         PRTEC_TI:  datos.PRTEC_TI,
         PRTEC_ON:  datos.PRTEC_ON,
@@ -127,10 +125,12 @@ function ModalRegistro({ registro = null, onGuardar, onCerrar }) {
         PRTEC_TW:  datos.PRTEC_TW  || null,
         PRTEC_ST:  datos.PRTEC_ST,
       }
-      const respuesta = await api.post('/proteccionistas', payload)
+      const respuesta = esEdicion
+        ? await api.put(`/proteccionistas/${registro.PRTEC_ID}`, payload)
+        : await api.post('/proteccionistas', payload)
       onGuardar(normalizarProteccionista(respuesta.data.registro))
     } catch (err) {
-      setErrorMsg(err.response?.data?.mensaje ?? 'Error al registrar el proteccionista')
+      setErrorMsg(err.response?.data?.mensaje ?? (esEdicion ? 'Error al actualizar el proteccionista' : 'Error al registrar el proteccionista'))
     } finally {
       setGuardando(false)
     }
@@ -187,6 +187,11 @@ function ModalRegistro({ registro = null, onGuardar, onCerrar }) {
                 <label className={eLabel}>Teléfono Secundario</label>
                 <input name="PRTEC_TS" value={datos.PRTEC_TS} onChange={cambiar}
                   placeholder="04XX-XXX-XXXX (opcional)" className={eInput} />
+              </div>
+              <div className="col-span-2">
+                <label className={eLabel}>Correo Electrónico</label>
+                <input type="email" name="PRTEC_EM" value={datos.PRTEC_EM} onChange={cambiar}
+                  placeholder="usuario@correo.com (opcional)" className={eInput} />
               </div>
             </div>
           </div>
@@ -351,7 +356,28 @@ export default function GestionProteccionistas({ rolActivo = 'ADMINISTRADOR' }) 
     mostrarToast('exito', 'Proteccionista registrado exitosamente.')
   }
 
-  const eliminar = (id) => setProteccionistas(prev => prev.filter(p => p.PRTEC_ID !== id))
+  const eliminar = async (id) => {
+    const p = proteccionistas.find(x => x.PRTEC_ID === id)
+    const eliminado = await confirmarConClave({
+      titulo:  'Eliminar Proteccionista',
+      mensaje: `¿Eliminar al proteccionista ${p?.PRTEC_NO ?? ''}?`,
+      accion:  (clave) => api.delete(`/proteccionistas/${id}`, { data: { clave } }),
+    })
+    if (!eliminado) return
+    setProteccionistas(prev => prev.filter(x => x.PRTEC_ID !== id))
+    mostrarToast('exito', 'Proteccionista eliminado.')
+  }
+
+  // Los registros hechos desde la web entran Inactivos ("En espera") hasta ser aprobados
+  const aprobar = async (p) => {
+    try {
+      await api.patch(`/proteccionistas/${p.PRTEC_ID}/estado`, { PRTEC_ST: 'Activo' })
+      setProteccionistas(prev => prev.map(x => (x.PRTEC_ID === p.PRTEC_ID ? { ...x, PRTEC_ST: 'Activo' } : x)))
+      mostrarToast('exito', `Proteccionista ${p.PRTEC_NO} aprobado.`)
+    } catch (err) {
+      mostrarToast('error', err.response?.data?.mensaje ?? 'No se pudo aprobar el proteccionista.')
+    }
+  }
 
   const totalActivos  = proteccionistas.filter(p => p.PRTEC_ST === 'Activo').length
   const totalAnimales = proteccionistas.reduce((acc, p) =>
@@ -467,6 +493,7 @@ export default function GestionProteccionistas({ rolActivo = 'ADMINISTRADOR' }) 
                   <td className="px-5 py-3.5">
                     <p className="text-sm font-semibold text-gray-900">{p.PRTEC_NO}</p>
                     <p className="text-xs text-gray-400 mt-0.5">{p.PRTEC_CI}</p>
+                    {p.PRTEC_EM && <p className="text-xs text-gray-400 mt-0.5">{p.PRTEC_EM}</p>}
                   </td>
                   <td className="px-5 py-3.5">
                     <p className="text-sm font-semibold text-gray-800">{p.PRTEC_ON || '—'}</p>
@@ -496,6 +523,12 @@ export default function GestionProteccionistas({ rolActivo = 'ADMINISTRADOR' }) 
                     <div className="flex items-center justify-end gap-1.5">
                       {esAdmin && (
                         <>
+                          {p.PRTEC_ST === 'Inactivo' && (
+                            <button onClick={() => aprobar(p)}
+                              className="flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-[#765A05] hover:bg-[#FFDF96]/20 border border-gray-200 hover:border-[#FFDF96]/40 px-2.5 py-1.5 rounded-lg transition-all cursor-pointer">
+                              <ShieldCheck className="w-3.5 h-3.5" /> Aprobar
+                            </button>
+                          )}
                           <button onClick={() => setEditando(p)}
                             className="flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-[#765A05] hover:bg-[#FFDF96]/20 border border-gray-200 hover:border-[#FFDF96]/40 px-2.5 py-1.5 rounded-lg transition-all cursor-pointer">
                             <Pencil className="w-3.5 h-3.5" /> Editar

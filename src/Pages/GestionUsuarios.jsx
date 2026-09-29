@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import {
   Users, Plus, Search, ShieldCheck, Stethoscope, MapPin,
   Eye, EyeOff, Save, X, UserCheck, UserX, Lock,
-  Calendar, Clock, ChevronLeft, ChevronRight,
+  Calendar, Clock, ChevronLeft, ChevronRight, Pencil,
 } from 'lucide-react'
 import api from '../lib/api'
 
@@ -20,81 +20,22 @@ const normalizarUsuario = (u) => ({
   ROLESG_ID: u.rolreg_no ?? u.ROLESG_ID ?? '—',
   ROLREG_ID: u.rolreg_id ?? u.ROLREG_ID ?? null,
   USUARI_NO: u.usuari_no ?? u.USUARI_NO ?? '',
+  USUARI_EM: u.usuari_em ?? u.USUARI_EM ?? '',
+  NOMBRE:    [u.person_no, u.person_ap].filter(Boolean).join(' '),
+  PERSON_TL: u.person_tl ?? '',
   USUARI_CL: '••••••••',
   USUARI_ES: mapEstado(u.usuari_es ?? u.USUARI_ES),
   USUARI_FC: (u.usuari_fe ?? u.USUARI_FC ?? '').slice(0, 10),
   USUARI_FM: (u.usuari_fm ?? u.USUARI_FM ?? '').slice(0, 10),
 })
 
-// ─── MOCK DATA — TM_USUARI ────────────────────────────────────────────────────
-
-const usuariosIniciales = [
-  {
-    USUARI_ID: 'USR-001',
-    PERSON_ID: 'V-15.883.241',
-    ROLESG_ID: 'Administrador',
-    USUARI_NO: 'jperez.admin',
-    USUARI_CL: '••••••••',
-    USUARI_ES: 'ACTIVO',
-    USUARI_FC: '2025-01-15',
-    USUARI_FM: '2026-05-20',
-  },
-  {
-    USUARI_ID: 'USR-002',
-    PERSON_ID: 'V-22.456.789',
-    ROLESG_ID: 'Veterinario',
-    USUARI_NO: 'dra.torres.vet',
-    USUARI_CL: '••••••••',
-    USUARI_ES: 'ACTIVO',
-    USUARI_FC: '2025-03-08',
-    USUARI_FM: '2026-06-01',
-  },
-  {
-    USUARI_ID: 'USR-003',
-    PERSON_ID: 'V-28.001.334',
-    ROLESG_ID: 'Personal de Campo',
-    USUARI_NO: 'campo.garcia',
-    USUARI_CL: '••••••••',
-    USUARI_ES: 'ACTIVO',
-    USUARI_FC: '2025-04-12',
-    USUARI_FM: '2026-06-10',
-  },
-  {
-    USUARI_ID: 'USR-004',
-    PERSON_ID: 'V-19.774.562',
-    ROLESG_ID: 'Veterinario',
-    USUARI_NO: 'vet.morales',
-    USUARI_CL: '••••••••',
-    USUARI_ES: 'INACTIVO',
-    USUARI_FC: '2025-02-20',
-    USUARI_FM: '2026-04-15',
-  },
-  {
-    USUARI_ID: 'USR-005',
-    PERSON_ID: 'V-31.228.900',
-    ROLESG_ID: 'Personal de Campo',
-    USUARI_NO: 'voluntario.ruiz',
-    USUARI_CL: '••••••••',
-    USUARI_ES: 'BLOQUEADO',
-    USUARI_FC: '2025-05-30',
-    USUARI_FM: '2026-05-31',
-  },
-  {
-    USUARI_ID: 'USR-006',
-    PERSON_ID: 'V-24.118.073',
-    ROLESG_ID: 'Personal de Campo',
-    USUARI_NO: 'logistica.leon',
-    USUARI_CL: '••••••••',
-    USUARI_ES: 'ACTIVO',
-    USUARI_FC: '2025-06-01',
-    USUARI_FM: '2026-06-12',
-  },
-]
-
 const FORM_VACIO = {
   PERSON_ID: '',
+  PERSON_NO: '',
+  PERSON_TL: '',
   ROLESG_ID: '',
   USUARI_NO: '',
+  USUARI_EM: '',
   USUARI_CL: '',
   USUARI_ES: 'ACTIVO',
 }
@@ -147,19 +88,23 @@ function BadgeEstadoUsuario({ estado }) {
 function ModalNuevoUsuario({ onCerrar, onGuardar }) {
   const [formulario, setFormulario] = useState(FORM_VACIO)
   const [verClave,   setVerClave]   = useState(false)
+  const [guardando,  setGuardando]  = useState(false)
+  const [errorMsg,   setErrorMsg]   = useState('')
 
   const cambiar = ({ target: { name, value } }) =>
     setFormulario(p => ({ ...p, [name]: value }))
 
-  const enviar = (e) => {
+  // onGuardar lanza un error con el mensaje del servidor si no se pudo crear
+  const enviar = async (e) => {
     e.preventDefault()
-    const nuevoUsuario = {
-      ...formulario,
-      USUARI_ID: `USR-${String(Date.now()).slice(-3)}`,
-      USUARI_FC: new Date().toISOString().slice(0, 10),
-      USUARI_FM: new Date().toISOString().slice(0, 10),
+    setErrorMsg('')
+    setGuardando(true)
+    try {
+      await onGuardar(formulario)
+    } catch (err) {
+      setErrorMsg(err.message)
+      setGuardando(false)
     }
-    onGuardar(nuevoUsuario)
   }
 
   return (
@@ -183,18 +128,65 @@ function ModalNuevoUsuario({ onCerrar, onGuardar }) {
         </div>
 
         {/* Formulario */}
-        <form onSubmit={enviar} className="p-6 space-y-4">
+        <form onSubmit={enviar} className="p-6 space-y-4 max-h-[78vh] overflow-y-auto">
 
-          {/* Cédula de Identidad */}
-          <div>
-            <label className={eLabel}>Cédula de Identidad del Titular</label>
-            <input
-              name="PERSON_ID" required
-              value={formulario.PERSON_ID}
-              onChange={cambiar}
-              placeholder="V-00.000.000"
-              className={eInput}
-            />
+          {errorMsg && (
+            <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2">{errorMsg}</p>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* Cédula de Identidad */}
+            <div>
+              <label className={eLabel}>Cédula de Identidad del Titular</label>
+              <input
+                name="PERSON_ID" required
+                value={formulario.PERSON_ID}
+                onChange={cambiar}
+                placeholder="V-00.000.000"
+                className={eInput}
+              />
+            </div>
+
+            {/* Nombre y apellido */}
+            <div>
+              <label className={eLabel}>Nombre y Apellido</label>
+              <input
+                name="PERSON_NO"
+                value={formulario.PERSON_NO}
+                onChange={cambiar}
+                placeholder="Nombre Apellido"
+                className={eInput}
+              />
+            </div>
+          </div>
+          <p className="text-[11px] text-gray-400 font-medium -mt-2">
+            Si la cédula ya está registrada se usan sus datos; si no, el nombre es obligatorio.
+          </p>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* Correo */}
+            <div>
+              <label className={eLabel}>Correo Electrónico</label>
+              <input
+                type="email" name="USUARI_EM" required
+                value={formulario.USUARI_EM}
+                onChange={cambiar}
+                placeholder="correo@ejemplo.com"
+                className={eInput}
+              />
+            </div>
+
+            {/* Teléfono */}
+            <div>
+              <label className={eLabel}>Teléfono (opcional)</label>
+              <input
+                type="tel" name="PERSON_TL" maxLength={15}
+                value={formulario.PERSON_TL}
+                onChange={cambiar}
+                placeholder="0414-1234567"
+                className={eInput}
+              />
+            </div>
           </div>
 
           {/* Nombre de Usuario */}
@@ -215,7 +207,7 @@ function ModalNuevoUsuario({ onCerrar, onGuardar }) {
             <div className="relative">
               <input
                 type={verClave ? 'text' : 'password'}
-                name="USUARI_CL" required
+                name="USUARI_CL" required minLength={8}
                 value={formulario.USUARI_CL}
                 onChange={cambiar}
                 placeholder="Mínimo 8 caracteres"
@@ -273,10 +265,118 @@ function ModalNuevoUsuario({ onCerrar, onGuardar }) {
             </button>
             <button
               type="submit"
-              className="flex items-center gap-2 px-6 py-2.5 bg-[#765A05] hover:bg-[#5a4304] text-white text-sm font-bold rounded-xl transition-colors shadow-sm"
+              disabled={guardando}
+              className="flex items-center gap-2 px-6 py-2.5 bg-[#765A05] hover:bg-[#5a4304] disabled:opacity-60 text-white text-sm font-bold rounded-xl transition-colors shadow-sm"
             >
               <Save className="w-4 h-4" />
-              Crear Usuario
+              {guardando ? 'Creando...' : 'Crear Usuario'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+// ─── MODAL: EDITAR USUARIO ────────────────────────────────────────────────────
+
+function ModalEditarUsuario({ usuario, rolesMap, esUnoMismo, onCerrar, onGuardado }) {
+  const [formulario, setFormulario] = useState({
+    PERSON_NO: usuario.NOMBRE,
+    PERSON_TL: usuario.PERSON_TL,
+    USUARI_NO: usuario.USUARI_NO,
+    USUARI_EM: usuario.USUARI_EM,
+    ROLREG_ID: String(usuario.ROLREG_ID ?? ''),
+  })
+  const [guardando, setGuardando] = useState(false)
+  const [errorMsg,  setErrorMsg]  = useState('')
+
+  const cambiar = ({ target: { name, value } }) =>
+    setFormulario(p => ({ ...p, [name]: value }))
+
+  const enviar = async (e) => {
+    e.preventDefault()
+    setErrorMsg('')
+    setGuardando(true)
+    try {
+      const { data } = await api.put(`/usuarios/${usuario.USUARI_ID}`, {
+        ...formulario, ROLREG_ID: Number(formulario.ROLREG_ID),
+      })
+      onGuardado(data.registro, formulario)
+    } catch (err) {
+      setErrorMsg(err.response?.data?.mensaje ?? 'No se pudo actualizar el usuario')
+      setGuardando(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm">
+      <div className="bg-white/95 backdrop-blur-md border border-white/60 shadow-2xl rounded-2xl w-full max-w-lg">
+
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 bg-[#765A05]/10 rounded-xl flex items-center justify-center">
+              <Pencil className="w-5 h-5 text-[#765A05]" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-gray-900">Editar Usuario</h3>
+              <p className="text-xs text-gray-400">Cédula {usuario.PERSON_ID}</p>
+            </div>
+          </div>
+          <button onClick={onCerrar} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <form onSubmit={enviar} className="p-6 space-y-4 max-h-[78vh] overflow-y-auto">
+          {errorMsg && (
+            <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2">{errorMsg}</p>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className={eLabel}>Nombre y Apellido</label>
+              <input name="PERSON_NO" value={formulario.PERSON_NO} onChange={cambiar}
+                disabled={usuario.PERSON_ID === '—'} placeholder="Nombre Apellido" className={eInput} />
+            </div>
+            <div>
+              <label className={eLabel}>Teléfono</label>
+              <input type="tel" name="PERSON_TL" maxLength={15} value={formulario.PERSON_TL} onChange={cambiar}
+                disabled={usuario.PERSON_ID === '—'} placeholder="0414-1234567" className={eInput} />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className={eLabel}>Nombre de Usuario (Login)</label>
+              <input name="USUARI_NO" required value={formulario.USUARI_NO} onChange={cambiar} className={eInput} />
+            </div>
+            <div>
+              <label className={eLabel}>Correo Electrónico</label>
+              <input type="email" name="USUARI_EM" required value={formulario.USUARI_EM} onChange={cambiar} className={eInput} />
+            </div>
+          </div>
+
+          <div>
+            <label className={eLabel}>Nivel de Acceso</label>
+            <select name="ROLREG_ID" required value={formulario.ROLREG_ID} onChange={cambiar}
+              disabled={esUnoMismo} className={eInput}>
+              {Object.entries(rolesMap).map(([nombre, id]) => <option key={id} value={id}>{nombre}</option>)}
+            </select>
+            {esUnoMismo && (
+              <p className="text-[11px] text-gray-400 font-medium mt-1.5">No puede cambiar su propio nivel de acceso.</p>
+            )}
+          </div>
+
+          <div className="flex items-center justify-end gap-3 pt-2 border-t border-gray-100">
+            <button type="button" onClick={onCerrar}
+              className="px-5 py-2.5 text-sm font-semibold text-gray-600 hover:bg-gray-100 rounded-xl transition-colors border border-gray-400">
+              Cancelar
+            </button>
+            <button type="submit" disabled={guardando}
+              className="flex items-center gap-2 px-6 py-2.5 bg-[#765A05] hover:bg-[#5a4304] disabled:opacity-60 text-white text-sm font-bold rounded-xl transition-colors shadow-sm">
+              <Save className="w-4 h-4" />
+              {guardando ? 'Guardando...' : 'Guardar Cambios'}
             </button>
           </div>
         </form>
@@ -288,13 +388,17 @@ function ModalNuevoUsuario({ onCerrar, onGuardar }) {
 // ─── COMPONENTE PRINCIPAL ─────────────────────────────────────────────────────
 
 export default function GestionUsuarios() {
-  const [usuarios,     setUsuarios]     = useState(usuariosIniciales)
+  const [usuarios,     setUsuarios]     = useState([])
   const [busqueda,     setBusqueda]     = useState('')
   const [modalAbierto, setModalAbierto] = useState(false)
   const [cargando,     setCargando]     = useState(true)
   const [notificacion, setNotificacion] = useState(null)
   const [paginaActual, setPaginaActual] = useState(1)
   const [rolesMap,     setRolesMap]     = useState(ROLES_FALLBACK)
+  const [editando,     setEditando]     = useState(null)
+  const idSesion = (() => {
+    try { return JSON.parse(localStorage.getItem('siscvi_usuario') || '{}').USUARI_ID } catch { return null }
+  })()
 
   const mostrarToast = (tipo, mensaje) => {
     setNotificacion({ tipo, mensaje })
@@ -315,7 +419,7 @@ export default function GestionUsuarios() {
     const cargarUsuarios = api.get('/usuarios')
       .then(r => {
         const datos = r.data.registros ?? []
-        if (datos.length) setUsuarios(datos.map(normalizarUsuario))
+        setUsuarios(datos.map(normalizarUsuario))
       })
       .catch(() => {})
 
@@ -326,27 +430,32 @@ export default function GestionUsuarios() {
   const cambiarEstado = async (usuariId, nuevoEstado) => {
     const hoy = new Date().toISOString().slice(0, 10)
     const estadoApi = nuevoEstado === 'BLOQUEADO' ? 'SUSPENDIDO' : nuevoEstado
-    setUsuarios(prev =>
-      prev.map(u =>
-        (u.USUARI_ID === usuariId || String(u.USUARI_ID) === String(usuariId))
-          ? { ...u, USUARI_ES: nuevoEstado, USUARI_FM: hoy }
-          : u
-      )
-    )
     try {
       await api.patch(`/usuarios/${usuariId}/estado`, { USUARI_ES: estadoApi })
+      // Solo se refleja en la tabla cuando el servidor confirmó el cambio
+      setUsuarios(prev =>
+        prev.map(u =>
+          (u.USUARI_ID === usuariId || String(u.USUARI_ID) === String(usuariId))
+            ? { ...u, USUARI_ES: nuevoEstado, USUARI_FM: hoy }
+            : u
+        )
+      )
       mostrarToast('exito', `Estado actualizado a ${nuevoEstado === 'BLOQUEADO' ? 'bloqueado' : nuevoEstado.toLowerCase()}.`)
-    } catch {
-      mostrarToast('error', 'No se pudo actualizar el estado en el servidor.')
+    } catch (error) {
+      mostrarToast('error', error.response?.data?.mensaje ?? 'No se pudo actualizar el estado en el servidor.')
     }
   }
 
+  // Si falla, lanza un Error con el mensaje del servidor (el modal lo muestra y sigue abierto)
   const guardarUsuario = async (nuevoUsuario) => {
-    const rolId = rolesMap[nuevoUsuario.ROLESG_ID] ?? ROLES_FALLBACK[nuevoUsuario.ROLESG_ID] ?? 1
+    const rolId = rolesMap[nuevoUsuario.ROLESG_ID] ?? ROLES_FALLBACK[nuevoUsuario.ROLESG_ID]
     const payload = {
-      PERSON_ID: nuevoUsuario.PERSON_ID,
+      PERSON_ID: nuevoUsuario.PERSON_ID.trim(),
+      PERSON_NO: nuevoUsuario.PERSON_NO.trim(),
+      PERSON_TL: nuevoUsuario.PERSON_TL.trim(),
       ROLESG_ID: rolId,
-      USUARI_NO: nuevoUsuario.USUARI_NO,
+      USUARI_NO: nuevoUsuario.USUARI_NO.trim(),
+      USUARI_EM: nuevoUsuario.USUARI_EM.trim(),
       USUARI_CL: nuevoUsuario.USUARI_CL,
       USUARI_ES: nuevoUsuario.USUARI_ES,
     }
@@ -354,16 +463,26 @@ export default function GestionUsuarios() {
       const r = await api.post('/usuarios', payload)
       const creado = normalizarUsuario({
         ...r.data.registro,
-        ROLESG_ID: nuevoUsuario.ROLESG_ID,
-        USUARI_FM: new Date().toISOString().slice(0, 10),
+        rolreg_no: nuevoUsuario.ROLESG_ID,
+        person_no: payload.PERSON_NO,
+        person_tl: payload.PERSON_TL,
       })
       setUsuarios(prev => [creado, ...prev])
+      setModalAbierto(false)
       mostrarToast('exito', 'Usuario creado exitosamente.')
     } catch (error) {
-      setUsuarios(prev => [nuevoUsuario, ...prev])
-      mostrarToast('error', error.response?.data?.mensaje ?? 'Usuario guardado localmente.')
+      throw new Error(error.response?.data?.mensaje ?? 'No se pudo crear el usuario en el servidor.', { cause: error })
     }
-    setModalAbierto(false)
+  }
+
+  const usuarioEditado = (registro, formulario) => {
+    const nombreRol = Object.keys(rolesMap).find(n => Number(rolesMap[n]) === Number(registro.rolreg_id)) ?? '—'
+    setUsuarios(prev => prev.map(u => String(u.USUARI_ID) === String(registro.usuari_id)
+      ? { ...u, USUARI_NO: registro.usuari_no, USUARI_EM: registro.usuari_em, ROLREG_ID: registro.rolreg_id, ROLESG_ID: nombreRol,
+          NOMBRE: formulario.PERSON_NO || u.NOMBRE, PERSON_TL: formulario.PERSON_TL || u.PERSON_TL }
+      : u))
+    setEditando(null)
+    mostrarToast('exito', 'Usuario actualizado.')
   }
 
   const usuariosFiltrados = usuarios.filter(u =>
@@ -485,6 +604,13 @@ export default function GestionUsuarios() {
                   </td>
                   <td className="px-5 py-4">
                     <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => setEditando(u)}
+                        className="flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-[#765A05] hover:bg-[#FFDF96]/20 border border-gray-200 hover:border-[#FFDF96]/40 px-2.5 py-1.5 rounded-lg transition-all whitespace-nowrap cursor-pointer"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                        Editar
+                      </button>
                       {u.USUARI_ES !== 'ACTIVO' && (
                         <button
                           onClick={() => cambiarEstado(u.USUARI_ID, 'ACTIVO')}
@@ -548,6 +674,16 @@ export default function GestionUsuarios() {
         <ModalNuevoUsuario
           onCerrar={() => setModalAbierto(false)}
           onGuardar={guardarUsuario}
+        />
+      )}
+
+      {editando && (
+        <ModalEditarUsuario
+          usuario={editando}
+          rolesMap={rolesMap}
+          esUnoMismo={String(editando.USUARI_ID) === String(idSesion)}
+          onCerrar={() => setEditando(null)}
+          onGuardado={usuarioEditado}
         />
       )}
     </div>

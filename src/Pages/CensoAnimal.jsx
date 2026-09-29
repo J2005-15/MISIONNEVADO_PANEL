@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Save, Search, Pencil, Trash2, X, ChevronDown, CheckCircle } from 'lucide-react'
 import api from '../lib/api'
+import confirmarConClave from '../lib/confirmarConClave'
 // ─── COMPONENTES AUXILIARES ─────────────────────────────────────────────────
 
 // Encabezado de campo: solo nombre amigable, sin referencias técnicas de BD
@@ -60,10 +61,25 @@ const FORMULARIO_VACIO = {
 // ─── COMPONENTE PRINCIPAL ───────────────────────────────────────────────────
 
 // Recibe onGuardar: función del padre que agrega el registro al estado global
-export default function CensoAnimal({ setVistaActual, onGuardar, propietarioData, rolActivo = 'ADMINISTRADOR' }) {
+// Registro de GET /api/censo (columnas en minúscula) → campos del formulario
+const formularioDesdeRegistro = (r) => ({
+  ID_PERSON:  r.person_ce ?? '',
+  NOM_ANIMA:  r.nom_anima ?? '',
+  ESPECIE:    r.especi_id != null ? String(r.especi_id) : '',
+  ID_RAZARE:  r.razare_id != null ? String(r.razare_id) : '',
+  SECTOR_C:   r.sector_id != null ? String(r.sector_id) : '',
+  COL_ANIMA:  r.colore_id != null ? String(r.colore_id) : '',
+  SEX_ANIMA:  r.sex_anima ?? '',
+  EDAD_ANIMA: r.eda_anima != null ? String(r.eda_anima) : '0',
+  SINTOMA_C:  r.est_repro ?? '',
+  FECHA_CENS: String(r.fec_censo ?? '').slice(0, 10),
+})
+
+// registroInicial: registro del censo a editar (desde el botón Editar de la tabla)
+export default function CensoAnimal({ setVistaActual, onGuardar, propietarioData, registroInicial = null, rolActivo = 'ADMINISTRADOR' }) {
   const esAdmin = rolActivo === 'ADMINISTRADOR'
   // Estado del formulario. Los nombres de campo coinciden con las columnas de la base de datos.
-  const [formulario, setFormulario] = useState({
+  const [formulario, setFormulario] = useState(registroInicial ? formularioDesdeRegistro(registroInicial) : {
     ID_PERSON:  propietarioData?.PERSON_CE || '', // Pre-cargada desde RegistroPropietario
     NOM_ANIMA:  '',
     ESPECIE:    '',   // TM_ESPECI — filtra razas dinámicamente
@@ -75,6 +91,8 @@ export default function CensoAnimal({ setVistaActual, onGuardar, propietarioData
     SINTOMA_C:  '',   // Estado reproductivo
     FECHA_CENS: '',   // Fecha del censo
   })
+  // CENSOA_ID del registro cargado (por Editar o por Buscar); habilita Modificar y Eliminar
+  const [censoaId, setCensoaId] = useState(registroInicial?.censoa_id ?? null)
 
   // ─── CATÁLOGOS DINÁMICOS DESDE LA BD ────────────────────────────────────────
   const [catalogoSectores, setCatalogoSectores] = useState([])
@@ -132,6 +150,11 @@ export default function CensoAnimal({ setVistaActual, onGuardar, propietarioData
 
   const handleEnviar = async (e) => {
     e.preventDefault()
+    // Con un registro cargado (Editar/Buscar), Guardar actualiza en vez de duplicar
+    if (censoaId) {
+      await modificar()
+      return
+    }
 
     const payload = {
       PERSON_CE: formulario.ID_PERSON,
@@ -150,7 +173,6 @@ export default function CensoAnimal({ setVistaActual, onGuardar, propietarioData
       FEC_CENSO: formulario.FECHA_CENS
     }
 
-    console.log('== AUDITORÍA SISCVI: Payload del Censo a Neon ==', payload)
 
     try {
       const response = await api.post('/censo', payload)
@@ -165,16 +187,78 @@ export default function CensoAnimal({ setVistaActual, onGuardar, propietarioData
     }
   }
   
-  const buscar = () => {
-    console.log('BUSCAR – Cédula consultada:', formulario.ID_PERSON)
+  // Buscar: registros del censo cuyo dueño tiene esa cédula (solo dígitos);
+  // si se escribió el nombre de la mascota, se usa para elegir entre varios.
+  const buscar = async () => {
+    const digitos = formulario.ID_PERSON.replace(/\D/g, '')
+    if (digitos.length < 5) {
+      alert('Escriba la cédula del dueño para buscar.')
+      return
+    }
+    try {
+      const { data } = await api.get('/censo')
+      const delDueno = (data.registros ?? []).filter(r => (r.person_ce ?? '').replace(/\D/g, '') === digitos)
+      if (delDueno.length === 0) {
+        alert('No hay animales censados con esa cédula.')
+        return
+      }
+      const nombre = formulario.NOM_ANIMA.trim().toLowerCase()
+      const elegido = (nombre && delDueno.find(r => (r.nom_anima ?? '').toLowerCase() === nombre)) || delDueno[0]
+      setFormulario(formularioDesdeRegistro(elegido))
+      setCensoaId(elegido.censoa_id)
+      if (delDueno.length > 1) {
+        alert(`Este dueño tiene ${delDueno.length} animales censados (${delDueno.map(r => r.nom_anima).join(', ')}). ` +
+              `Se cargó "${elegido.nom_anima}"; escriba otro nombre y pulse Buscar para cambiar.`)
+      }
+    } catch (error) {
+      alert(error.response?.data?.mensaje || 'Error al buscar en el censo')
+    }
   }
 
-  const modificar = () => {
-    console.log('MODIFICAR – Datos actualizados:', formulario)
+  const armarPayload = () => ({
+    PERSON_CE: formulario.ID_PERSON,
+    PERSON_NO: propietarioData?.PERSON_NO,
+    PERSON_AP: propietarioData?.PERSON_AP,
+    PERSON_TL: propietarioData?.PERSON_TL,
+    PERSON_EM: propietarioData?.PERSON_EM,
+    SECTOR_ID: parseInt(formulario.SECTOR_C) || null,
+    COLORE_ID: parseInt(formulario.COL_ANIMA) || null,
+    ESPECI_ID: parseInt(formulario.ESPECIE) || null,
+    RAZARE_ID: parseInt(formulario.ID_RAZARE) || null,
+    NOM_ANIMA: formulario.NOM_ANIMA,
+    SEX_ANIMA: formulario.SEX_ANIMA,
+    EDA_ANIMA: parseInt(formulario.EDAD_ANIMA) || 0,
+    EST_REPRO: formulario.SINTOMA_C,
+    FEC_CENSO: formulario.FECHA_CENS,
+  })
+
+  const modificar = async () => {
+    if (!censoaId) {
+      alert('Primero cargue un registro: use Buscar o el botón Editar de la tabla.')
+      return
+    }
+    try {
+      await api.put(`/censo/${censoaId}`, armarPayload())
+      alert('Registro del censo actualizado.')
+      setVistaActual('censo')
+    } catch (error) {
+      alert(error.response?.data?.mensaje || 'Error al modificar el registro')
+    }
   }
 
-  const eliminar = () => {
-    console.log('ELIMINAR – Registro con cédula:', formulario.ID_PERSON)
+  const eliminar = async () => {
+    if (!censoaId) {
+      alert('Primero cargue un registro: use Buscar o el botón Editar de la tabla.')
+      return
+    }
+    const eliminado = await confirmarConClave({
+      titulo:  'Eliminar del Censo',
+      mensaje: `¿Eliminar del censo a ${formulario.NOM_ANIMA}?`,
+      accion:  (clave) => api.delete(`/censo/${censoaId}`, { data: { clave } }),
+    })
+    if (!eliminado) return
+    alert('Registro del censo eliminado.')
+    setVistaActual('censo')
   }
 
   // Cancelar limpia el formulario y regresa a la tabla sin guardar nada
@@ -183,6 +267,7 @@ export default function CensoAnimal({ setVistaActual, onGuardar, propietarioData
       ID_PERSON: '', NOM_ANIMA: '', ESPECIE: '', ID_RAZARE: '', SECTOR_C: '',
       COL_ANIMA: '', SEX_ANIMA: '', EDAD_ANIMA: '0', SINTOMA_C: '', FECHA_CENS: '',
     })
+    setCensoaId(null)
     setVistaActual('censo')
   }
 

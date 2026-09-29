@@ -19,21 +19,6 @@ const normalizarInsumo = (i) => ({
   INSUMO_EX: i.insumo_ex  ?? i.INSUMO_EX ?? 0,
 })
 
-// ─── CATEGORÍAS ───────────────────────────────────────────────────────────────
-const CATEGORIAS = ['Biológico', 'Medicamento', 'Solución IV', 'Suministro', 'Anestésico']
-
-// ─── MOCK DATA — TM_INSUMO ────────────────────────────────────────────────────
-const insumosIniciales = [
-  { INSUMO_ID: 'INS-001', CATEGO_ID: 'Biológico',   INSUMO_NO: 'Vacuna Antirrábica',            INSUMO_UN: 'dosis',    INSUMO_FE: '2026-12-15', INSUMO_SM: 10,  INSUMO_EX: 24   },
-  { INSUMO_ID: 'INS-002', CATEGO_ID: 'Medicamento',  INSUMO_NO: 'Antibiótico Amoxicilina 500mg', INSUMO_UN: 'tabletas', INSUMO_FE: '2027-03-20', INSUMO_SM: 30,  INSUMO_EX: 8    },
-  { INSUMO_ID: 'INS-003', CATEGO_ID: 'Solución IV',  INSUMO_NO: 'Suero Fisiológico 0.9%',        INSUMO_UN: 'ml',       INSUMO_FE: '2027-06-01', INSUMO_SM: 500, INSUMO_EX: 1200 },
-  { INSUMO_ID: 'INS-004', CATEGO_ID: 'Suministro',   INSUMO_NO: 'Jeringas Desechables 10ml',     INSUMO_UN: 'unidades', INSUMO_FE: '2028-01-01', INSUMO_SM: 50,  INSUMO_EX: 65   },
-  { INSUMO_ID: 'INS-005', CATEGO_ID: 'Medicamento',  INSUMO_NO: 'Antiparasitario Ivermectina',   INSUMO_UN: 'ml',       INSUMO_FE: '2026-09-10', INSUMO_SM: 20,  INSUMO_EX: 10   },
-  { INSUMO_ID: 'INS-006', CATEGO_ID: 'Suministro',   INSUMO_NO: 'Guantes Quirúrgicos (par)',      INSUMO_UN: 'pares',    INSUMO_FE: '2028-06-30', INSUMO_SM: 20,  INSUMO_EX: 3    },
-  { INSUMO_ID: 'INS-007', CATEGO_ID: 'Anestésico',   INSUMO_NO: 'Ketamina Inyectable',           INSUMO_UN: 'ml',       INSUMO_FE: '2027-01-20', INSUMO_SM: 50,  INSUMO_EX: 120  },
-  { INSUMO_ID: 'INS-008', CATEGO_ID: 'Suministro',   INSUMO_NO: 'Gasas Estériles 10×10 cm',      INSUMO_UN: 'unidades', INSUMO_FE: '2028-04-15', INSUMO_SM: 25,  INSUMO_EX: 30   },
-]
-
 const FORM_VACIO = {
   CATEGO_ID: '',
   INSUMO_NO: '',
@@ -58,6 +43,7 @@ function calcularEstado(INSUMO_EX, INSUMO_SM) {
 }
 
 function calcularPct(INSUMO_EX, INSUMO_SM) {
+  if (!(Number(INSUMO_SM) > 0)) return Number(INSUMO_EX) > 0 ? 100 : 0   // sin mínimo definido
   return Math.min(100, Math.round((INSUMO_EX / (INSUMO_SM * 2)) * 100))
 }
 
@@ -293,6 +279,206 @@ function ModalNuevoSuministro({ onCerrar, onGuardar }) {
   )
 }
 
+// ─── MODAL: AJUSTAR STOCK (ENTRADA / SALIDA / AJUSTE) ────────────────────────
+const TIPOS_MOV = {
+  ENTRADA: { etiqueta: 'Entrada (suma al stock)',        cantidad: 'Cantidad que ingresa',   motivo: 'Ej: Compra, donación recibida, reposición' },
+  SALIDA:  { etiqueta: 'Salida (resta del stock)',        cantidad: 'Cantidad que sale',      motivo: 'Ej: Uso en jornada, vencido, dañado' },
+  AJUSTE:  { etiqueta: 'Ajuste por conteo físico',        cantidad: 'Existencia real contada', motivo: 'Ej: Inventario mensual, corrección de error' },
+}
+
+function ModalAjustarStock({ insumo, onCerrar, onGuardado }) {
+  const [datos,     setDatos]     = useState({ tipo: 'ENTRADA', cantidad: '', motivo: '' })
+  const [guardando, setGuardando] = useState(false)
+  const [errorMsg,  setErrorMsg]  = useState('')
+
+  const cambiar = ({ target: { name, value } }) => setDatos(p => ({ ...p, [name]: value }))
+  const actual   = Number(insumo.INSUMO_EX) || 0
+  const cantidad = datos.cantidad === '' ? null : Number(datos.cantidad)
+  const nueva    = cantidad === null ? null
+    : datos.tipo === 'ENTRADA' ? actual + cantidad
+    : datos.tipo === 'SALIDA'  ? actual - cantidad
+    : cantidad
+  const cfg = TIPOS_MOV[datos.tipo]
+
+  const enviar = async (e) => {
+    e.preventDefault()
+    setErrorMsg('')
+    setGuardando(true)
+    try {
+      const { data } = await api.post(`/inventario/${insumo.INSUMO_ID}/movimiento`, {
+        tipo: datos.tipo, cantidad: Number(datos.cantidad), motivo: datos.motivo.trim(),
+      })
+      onGuardado(data.registro)
+    } catch (err) {
+      setErrorMsg(err.response?.data?.mensaje ?? 'No se pudo registrar el movimiento')
+      setGuardando(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm">
+      <div className="bg-white/95 backdrop-blur-md border border-white/60 shadow-2xl rounded-2xl w-full max-w-lg">
+
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 bg-[#765A05]/10 rounded-xl flex items-center justify-center">
+              <RefreshCw className="w-5 h-5 text-[#765A05]" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-gray-900">Ajustar Stock</h3>
+              <p className="text-xs text-gray-400 truncate max-w-[260px]">{insumo.INSUMO_NO} — existencia actual: {actual} {insumo.INSUMO_UN}</p>
+            </div>
+          </div>
+          <button onClick={onCerrar} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <form onSubmit={enviar} className="p-6 space-y-4">
+          {errorMsg && (
+            <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2">{errorMsg}</p>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className={eLabel}>Tipo de movimiento</label>
+              <select name="tipo" value={datos.tipo} onChange={cambiar} className={eInput}>
+                {Object.entries(TIPOS_MOV).map(([valor, t]) => <option key={valor} value={valor}>{t.etiqueta}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className={eLabel}>{cfg.cantidad} ({insumo.INSUMO_UN})</label>
+              <input
+                type="number" min={datos.tipo === 'AJUSTE' ? 0 : 1} step="1"
+                name="cantidad" required
+                value={datos.cantidad}
+                onChange={cambiar}
+                placeholder="0"
+                className={eInput}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className={eLabel}>Motivo</label>
+            <input
+              name="motivo" required maxLength={300}
+              value={datos.motivo}
+              onChange={cambiar}
+              placeholder={cfg.motivo}
+              className={eInput}
+            />
+          </div>
+
+          {nueva !== null && (
+            <div className={`flex items-center justify-between text-xs font-semibold px-3 py-2.5 rounded-xl border ${
+              nueva < 0 ? 'bg-red-50 text-red-700 border-red-200' : 'bg-[#FFDF96]/20 text-[#765A05] border-[#FFDF96]/50'}`}>
+              <span>Existencia resultante</span>
+              <span>{nueva < 0 ? `No alcanza: hay ${actual} ${insumo.INSUMO_UN}` : `${actual} → ${nueva} ${insumo.INSUMO_UN}`}</span>
+            </div>
+          )}
+
+          <div className="flex items-center justify-end gap-3 pt-2 border-t border-gray-100">
+            <button type="button" onClick={onCerrar}
+              className="px-5 py-2.5 text-sm font-semibold text-gray-600 hover:bg-gray-100 rounded-xl transition-colors border border-gray-400">
+              Cancelar
+            </button>
+            <button type="submit" disabled={guardando || nueva === null || nueva < 0}
+              className="flex items-center gap-2 px-6 py-2.5 bg-[#765A05] hover:bg-[#5a4304] disabled:opacity-60 text-white text-sm font-bold rounded-xl transition-colors shadow-sm">
+              <Save className="w-4 h-4" />
+              {guardando ? 'Guardando...' : 'Registrar Movimiento'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+// ─── MODAL: HISTORIAL DE MOVIMIENTOS ─────────────────────────────────────────
+const CHIP_MOV = {
+  ENTRADA: 'bg-green-100 text-green-700 border-green-200',
+  SALIDA:  'bg-red-100 text-red-700 border-red-200',
+  AJUSTE:  'bg-amber-100 text-amber-700 border-amber-200',
+}
+
+function ModalHistorialInsumo({ insumo, onCerrar }) {
+  const [movimientos, setMovimientos] = useState([])
+  const [cargando,    setCargando]    = useState(true)
+  const [errorMsg,    setErrorMsg]    = useState('')
+
+  useEffect(() => {
+    api.get(`/inventario/${insumo.INSUMO_ID}/movimientos`)
+      .then(r => setMovimientos(r.data.registros ?? []))
+      .catch(err => setErrorMsg(err.response?.data?.mensaje ?? 'No se pudo cargar el historial'))
+      .finally(() => setCargando(false))
+  }, [insumo.INSUMO_ID])
+
+  const fechaHora = (v) => {
+    const d = new Date(v)
+    return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString('es-VE', { dateStyle: 'short', timeStyle: 'short' })
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm">
+      <div className="bg-white/95 backdrop-blur-md border border-white/60 shadow-2xl rounded-2xl w-full max-w-3xl flex flex-col max-h-[88vh]">
+
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 bg-teal-50 rounded-xl flex items-center justify-center">
+              <Activity className="w-5 h-5 text-teal-600" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-gray-900">Historial de Movimientos</h3>
+              <p className="text-xs text-gray-400">{insumo.INSUMO_NO} — existencia actual: {insumo.INSUMO_EX} {insumo.INSUMO_UN}</p>
+            </div>
+          </div>
+          <button onClick={onCerrar} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="p-6 overflow-y-auto">
+          {errorMsg && <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2">{errorMsg}</p>}
+          {cargando ? (
+            <p className="text-sm text-gray-400 text-center py-10">Cargando historial...</p>
+          ) : movimientos.length === 0 && !errorMsg ? (
+            <p className="text-sm text-gray-400 text-center py-10">Este insumo aún no tiene movimientos registrados.</p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-200/60">
+                  {['Fecha', 'Tipo', 'Cantidad', 'Existencia', 'Motivo', 'Registró'].map(c => (
+                    <th key={c} className="text-left text-[10px] font-bold text-[#765A05] uppercase tracking-wider px-3 py-2 whitespace-nowrap">{c}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {movimientos.map(m => (
+                  <tr key={m.movin_id} className="border-b border-gray-50 last:border-0">
+                    <td className="px-3 py-2.5 text-xs text-gray-500 whitespace-nowrap">{fechaHora(m.movin_fe)}</td>
+                    <td className="px-3 py-2.5">
+                      <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold border ${CHIP_MOV[m.movin_ti] ?? ''}`}>
+                        {{ ENTRADA: 'Entrada', SALIDA: 'Salida', AJUSTE: 'Ajuste' }[m.movin_ti] ?? m.movin_ti}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2.5 text-xs font-semibold text-gray-800 whitespace-nowrap">
+                      {m.movin_ti === 'ENTRADA' ? '+' : m.movin_ti === 'SALIDA' ? '−' : ''}{m.movin_ca}
+                    </td>
+                    <td className="px-3 py-2.5 text-xs text-gray-600 whitespace-nowrap">{m.movin_an} → <span className="font-bold text-gray-900">{m.movin_nu}</span></td>
+                    <td className="px-3 py-2.5 text-xs text-gray-600">{m.movin_mo}</td>
+                    <td className="px-3 py-2.5 text-xs text-gray-500 whitespace-nowrap">{m.usuario}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── COLUMNAS DE TABLA ────────────────────────────────────────────────────────
 const COLUMNAS_ADMIN = [
   'ID Insumo', 'Nombre del Suministro', 'Categoría',
@@ -313,6 +499,9 @@ export default function LogisticaInventario({ rolActivo }) {
   const [cargando,     setCargando]     = useState(true)
   const [notificacion, setNotificacion] = useState(null)
   const [paginaActual, setPaginaActual] = useState(1)
+  const [ajustando,    setAjustando]    = useState(null)   // insumo en "Ajustar Stock"
+  const [historialDe,  setHistorialDe]  = useState(null)   // insumo en "Historial"
+  const [donacionesDelMes, setDonacionesDelMes] = useState(0)
 
   const esVeterinario = rolActivo === 'VETERINARIO'
   const esAdmin       = rolActivo === 'ADMINISTRADOR'
@@ -329,6 +518,23 @@ export default function LogisticaInventario({ rolActivo }) {
       .catch(() => {})
       .finally(() => setCargando(false))
   }, [])
+
+  // Donaciones (colaboraciones) registradas en el mes en curso — solo la ve el Administrador
+  useEffect(() => {
+    if (!esAdmin) return
+    const mes = new Date().toLocaleDateString('en-CA').slice(0, 7)   // YYYY-MM local
+    api.get('/colaboraciones')
+      .then(r => setDonacionesDelMes((r.data.registros ?? []).filter(c => String(c.colab_fe ?? '').startsWith(mes)).length))
+      .catch(() => {})
+  }, [esAdmin])
+
+  const movimientoGuardado = (registro) => {
+    setInsumos(prev => prev.map(i =>
+      String(i.INSUMO_ID) === String(registro.insum_id) ? { ...i, INSUMO_EX: registro.insumo_ex } : i
+    ))
+    setAjustando(null)
+    mostrarToast('exito', `Stock actualizado: ${registro.insumo_no} ahora tiene ${registro.insumo_ex} ${registro.insumo_un}.`)
+  }
 
   const insumosFiltrados = insumos.filter(ins =>
     String(ins.INSUMO_NO || '').toLowerCase().includes(busqueda.toLowerCase()) ||
@@ -352,7 +558,6 @@ export default function LogisticaInventario({ rolActivo }) {
   const enAlerta         = insumos.filter(i => calcularEstado(i.INSUMO_EX, i.INSUMO_SM) === 'ALERTA').length
   const enAlertaOCritico = enCritico + enAlerta
   const enOptimo         = insumos.filter(i => calcularEstado(i.INSUMO_EX, i.INSUMO_SM) === 'ÓPTIMO').length
-  const donacionesDelMes = 3
 
   return (
     <div className="space-y-6 max-w-7xl">
@@ -656,11 +861,15 @@ export default function LogisticaInventario({ rolActivo }) {
                         <div className="flex items-center justify-end gap-1.5">
                           {esAdmin ? (
                             <>
-                              <button className="flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-[#765A05] hover:bg-[#FFDF96]/20 border border-gray-200 hover:border-[#FFDF96]/40 px-2.5 py-1.5 rounded-lg transition-all whitespace-nowrap cursor-pointer">
+                              <button
+                                onClick={() => setAjustando(ins)}
+                                className="flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-[#765A05] hover:bg-[#FFDF96]/20 border border-gray-200 hover:border-[#FFDF96]/40 px-2.5 py-1.5 rounded-lg transition-all whitespace-nowrap cursor-pointer">
                                 <RefreshCw className="w-3.5 h-3.5" />
                                 Ajustar Stock
                               </button>
-                              <button className="flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-teal-700 hover:bg-teal-50 border border-gray-200 hover:border-teal-200 px-2.5 py-1.5 rounded-lg transition-all whitespace-nowrap cursor-pointer">
+                              <button
+                                onClick={() => setHistorialDe(ins)}
+                                className="flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-teal-700 hover:bg-teal-50 border border-gray-200 hover:border-teal-200 px-2.5 py-1.5 rounded-lg transition-all whitespace-nowrap cursor-pointer">
                                 <Activity className="w-3.5 h-3.5" />
                                 Historial
                               </button>
@@ -725,6 +934,13 @@ export default function LogisticaInventario({ rolActivo }) {
           onCerrar={() => setModalAbierto(false)}
           onGuardar={guardarSuministro}
         />
+      )}
+
+      {ajustando && (
+        <ModalAjustarStock insumo={ajustando} onCerrar={() => setAjustando(null)} onGuardado={movimientoGuardado} />
+      )}
+      {historialDe && (
+        <ModalHistorialInsumo insumo={historialDe} onCerrar={() => setHistorialDe(null)} />
       )}
     </div>
   );

@@ -1,9 +1,12 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Heart, Phone, CheckCircle, XCircle, Clock, User, Search, Loader2 } from 'lucide-react'
 import api from '../lib/api'
+import ModalAprobarAdopcion from './ModalAprobarAdopcion'
 
 // ─── NORMALIZAR SOLICITUD ────────────────────────────────────────────────────
+// La BD guarda 'PENDIENTE'; esta vista usa 'Pendiente' para contadores y estilos.
 function normalizarSolicitud(s) {
+  const estado = s.solic_es ?? s.SOLIC_ES ?? 'Pendiente'
   return {
     SOLIC_ID:   s.solic_id   ?? s.SOLIC_ID   ?? null,
     ADOPCI_ID:  s.adopci_id  ?? s.ADOPCI_ID  ?? null,
@@ -13,7 +16,7 @@ function normalizarSolicitud(s) {
     SOLIC_EM:   s.solic_em   ?? s.SOLIC_EM   ?? '',
     SOLIC_TL:   s.solic_tl   ?? s.SOLIC_TL   ?? '',
     SOLIC_MO:   s.solic_mo   ?? s.SOLIC_MO   ?? '',
-    SOLIC_ES:   s.solic_es   ?? s.SOLIC_ES   ?? 'Pendiente',
+    SOLIC_ES:   estado === 'PENDIENTE' ? 'Pendiente' : estado,
     SOLIC_FE:   (s.solic_fe  ?? s.SOLIC_FE   ?? '').toString().slice(0, 10),
   }
 }
@@ -40,6 +43,7 @@ export default function SolicitudesAdopcion() {
   const [solicitudes,  setSolicitudes]  = useState([])
   const [cargando,     setCargando]     = useState(true)
   const [busqueda,     setBusqueda]     = useState('')
+  const [aprobando,    setAprobando]    = useState(null)   // solicitud a aprobar (modal)
 
   const cargar = useCallback(async () => {
     setCargando(true)
@@ -55,14 +59,18 @@ export default function SolicitudesAdopcion() {
 
   useEffect(() => { cargar() }, [cargar])
 
-  const cambiarEstado = async (id, nuevoEstado) => {
+  // Aprobar abre el modal (cédula y sector para el censo); rechazar es directo.
+  // Se recarga la lista: el trigger de la BD rechaza las demás solicitudes del animal.
+  const cambiarEstado = async (s, nuevoEstado) => {
+    if (nuevoEstado === 'APROBADA') {
+      setAprobando({ id: s.SOLIC_ID, solicitante: s.SOLIC_NO, cedula: s.SOLIC_CE, mascota: s.MASCOTA_NO })
+      return
+    }
     try {
-      await api.patch(`/adopciones/solicitud/${id}`, { SOLIC_ES: nuevoEstado })
-      setSolicitudes(prev =>
-        prev.map(s => s.SOLIC_ID === id ? { ...s, SOLIC_ES: nuevoEstado } : s)
-      )
+      await api.patch(`/adopciones/solicitud/${s.SOLIC_ID}`, { SOLIC_ES: nuevoEstado })
+      await cargar()
     } catch (err) {
-      console.error('Error al cambiar estado:', err.message)
+      alert(err.response?.data?.mensaje ?? 'No se pudo cambiar el estado de la solicitud.')
     }
   }
 
@@ -216,14 +224,14 @@ export default function SolicitudesAdopcion() {
                         </a>
                       )}
                       {s.SOLIC_ES !== 'APROBADA' && (
-                        <button onClick={() => cambiarEstado(s.SOLIC_ID, 'APROBADA')}
+                        <button onClick={() => cambiarEstado(s, 'APROBADA')}
                           className="flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-[#765A05] hover:bg-[#FFDF96]/20 border border-gray-200 hover:border-[#FFDF96]/40 px-2.5 py-1.5 rounded-lg transition-all whitespace-nowrap cursor-pointer">
                           <CheckCircle className="w-3.5 h-3.5" />
                           Aprobar
                         </button>
                       )}
-                      {s.SOLIC_ES !== 'RECHAZADA' && (
-                        <button onClick={() => cambiarEstado(s.SOLIC_ID, 'RECHAZADA')}
+                      {s.SOLIC_ES !== 'RECHAZADA' && s.SOLIC_ES !== 'APROBADA' && (
+                        <button onClick={() => cambiarEstado(s, 'RECHAZADA')}
                           className="flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-red-600 hover:bg-red-50 border border-gray-200 hover:border-red-200 px-2.5 py-1.5 rounded-lg transition-all whitespace-nowrap cursor-pointer">
                           <XCircle className="w-3.5 h-3.5" />
                           Rechazar
@@ -243,6 +251,14 @@ export default function SolicitudesAdopcion() {
           </p>
         </div>
       </div>
+
+      {aprobando && (
+        <ModalAprobarAdopcion
+          solicitud={aprobando}
+          onAprobada={async () => { setAprobando(null); await cargar() }}
+          onCerrar={() => setAprobando(null)}
+        />
+      )}
     </div>
   )
 }

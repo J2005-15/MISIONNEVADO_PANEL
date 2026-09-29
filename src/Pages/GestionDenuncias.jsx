@@ -81,7 +81,6 @@ function ModalNuevaDenuncia({ onGuardar, onCerrar, rolActivo = 'ADMINISTRADOR' }
         DENUNC_MO: datos.DENUNC_MO,
         DENUNC_ES: datos.DENUNC_ES || 'EN_PROCESO'
       }
-      console.log('Payload Denuncia:', payload)
       const res = await api.post('/denuncias', payload)
       onGuardar(res.data.registro)
       if (typeof window !== 'undefined' && window.mostrarNotificacionGlobal) {
@@ -424,6 +423,7 @@ export default function GestionDenuncias({ rolActivo = 'ADMINISTRADOR' }) {
                             {persona}
                           </code>
                         )}
+                        {d.denunc_em && <p className="text-xs text-gray-400 mt-1">{d.denunc_em}</p>}
                       </td>
 
                       {/* Sector */}

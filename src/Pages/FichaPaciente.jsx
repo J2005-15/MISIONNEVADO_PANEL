@@ -4,19 +4,6 @@ import {
   IdCard, MapPin, Calendar, Activity, ClipboardList,
 } from 'lucide-react';
 
-// ── Cross-reference de propietarios registrados — mock TM_PERSON ─────────────
-const propietariosMock = [
-  { PERSON_CE: 'V-18452123', PERSON_NO: 'Carlos',  PERSON_AP: 'Mendoza',   PERSON_TL: '0416-123-4567' },
-  { PERSON_CE: 'V-22897541', PERSON_NO: 'Ana',     PERSON_AP: 'Rodríguez', PERSON_TL: '0414-765-4321' },
-  { PERSON_CE: 'V-15234890', PERSON_NO: 'Pedro',   PERSON_AP: 'García',    PERSON_TL: '0412-987-6543' },
-  { PERSON_CE: 'V-19876543', PERSON_NO: 'María',   PERSON_AP: 'González',  PERSON_TL: '0424-555-1234' },
-  { PERSON_CE: 'V-24123456', PERSON_NO: 'Roberto', PERSON_AP: 'Salinas',   PERSON_TL: '0426-444-9876' },
-];
-
-function normalizarCedula(s) {
-  return (s ?? '').replace(/[\s\-.]/g, '').toUpperCase();
-}
-
 // ── Mapas de código → etiqueta visual ────────────────────────────────────────
 const SEXO_LABEL   = { M: 'Macho', H: 'Hembra' };
 const COLOR_LABEL  = {
@@ -42,9 +29,22 @@ function CampoFicha({ etiqueta, valor, icono: Icono }) {
   );
 }
 
-export default function FichaPaciente({ registroCenso: reg, onNuevaConsulta, onVolver }) {
+// Registro de GET /api/censo (columnas en minúscula) → campos que usa la ficha
+const normalizarRegistro = (r) => ({
+  ID_PERSON:  r.person_ce ?? r.ID_PERSON,
+  NOM_ANIMA:  r.nom_anima ?? r.NOM_ANIMA,
+  SEX_ANIMA:  r.sex_anima ?? r.SEX_ANIMA,
+  EDAD_ANIMA: r.eda_anima ?? r.EDAD_ANIMA,
+  ESPECIE:    r.especi_no ?? r.ESPECIE,
+  COL_ANIMA:  r.colore_no ?? r.COL_ANIMA,
+  ID_RAZARE:  r.razare_no ?? r.ID_RAZARE,
+  ID_SECTOR:  r.sector_no ?? r.ID_SECTOR,
+  FEC_CENSO:  r.fec_censo ?? r.FEC_CENSO,
+});
 
-  if (!reg) {
+export default function FichaPaciente({ registroCenso, onNuevaConsulta, onVolver }) {
+
+  if (!registroCenso) {
     return (
       <div className="space-y-4">
         <button onClick={onVolver}
@@ -56,9 +56,15 @@ export default function FichaPaciente({ registroCenso: reg, onNuevaConsulta, onV
     );
   }
 
-  const propietario = propietariosMock.find(p =>
-    normalizarCedula(p.PERSON_CE) === normalizarCedula(reg.ID_PERSON)
-  ) ?? { PERSON_CE: reg.ID_PERSON, PERSON_NO: 'No', PERSON_AP: 'registrado', PERSON_TL: '—' };
+  const reg = normalizarRegistro(registroCenso);
+
+  // Propietario real: viene en el mismo registro del censo (JOIN con TM_PERSON)
+  const propietario = {
+    PERSON_CE: reg.ID_PERSON,
+    PERSON_NO: registroCenso.person_no ?? registroCenso.PERSON_NO ?? 'No',
+    PERSON_AP: registroCenso.person_ap ?? registroCenso.PERSON_AP ?? 'registrado',
+    PERSON_TL: registroCenso.person_tl ?? registroCenso.PERSON_TL ?? '—',
+  };
 
   const nombreCompleto = `${propietario.PERSON_NO} ${propietario.PERSON_AP}`.trim();
   const edadLabel      = reg.EDAD_ANIMA ? `${reg.EDAD_ANIMA} meses` : null;

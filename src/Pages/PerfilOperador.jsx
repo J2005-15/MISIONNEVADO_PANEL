@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
 import {
   CircleUser, Mail, Lock, Save, Check, AlertCircle,
-  Eye, EyeOff, ShieldCheck, Stethoscope, MapPin,
+  Eye, EyeOff, ShieldCheck, Stethoscope, MapPin, Phone,
 } from 'lucide-react'
+import api from '../lib/api'
 
 // ─── ESTILOS COMPARTIDOS (mismos que el resto del panel) ─────────────────────
 const eCard  = 'bg-white/70 backdrop-blur-md rounded-2xl border border-white/50 shadow-xl shadow-[#765A05]/5'
@@ -10,34 +11,6 @@ const eInput = 'w-full px-3.5 py-2.5 text-sm text-gray-900 border border-gray-20
 const eLabel = 'block text-[10px] font-bold text-gray-600 uppercase tracking-wider mb-1.5'
 const eSec   = 'text-xs font-bold text-[#765A05] uppercase tracking-widest flex items-center gap-2 mb-4 border-b border-white/60 pb-3'
 const eBoton = 'flex items-center justify-center gap-2 py-2.5 px-5 bg-[#765A05] text-white text-sm font-bold rounded-xl hover:bg-[#5c4504] transition-all shadow-md shadow-[#765A05]/20 disabled:opacity-60 disabled:cursor-not-allowed'
-
-// ─── PERFILES MOCK — uno por rol (fallback si el backend no responde) ─────────
-const PERFILES_MOCK = {
-  ADMINISTRADOR: {
-    nombre:   'Carlos Alberto Pérez',
-    cedula:   'V-18.452.123',
-    email:    'c.perez@sisvic.org.ve',
-    rol:      'ADMINISTRADOR',
-    ingreso:  '2024-01-15',
-    telefono: '0414-9887712',
-  },
-  VETERINARIO: {
-    nombre:   'Dra. María González',
-    cedula:   'V-15.234.890',
-    email:    'dra.gonzalez@sisvic.org.ve',
-    rol:      'VETERINARIO',
-    ingreso:  '2023-06-01',
-    telefono: '0416-5554432',
-  },
-  CAMPO: {
-    nombre:   'José Antonio Blanco',
-    cedula:   'V-30.112.005',
-    email:    'j.blanco@sisvic.org.ve',
-    rol:      'CAMPO',
-    ingreso:  '2025-03-10',
-    telefono: '0424-8877665',
-  },
-}
 
 // ─── APARIENCIA SEGÚN ROL ─────────────────────────────────────────────────────
 const CONFIG_ROL = {
@@ -108,38 +81,50 @@ function InputPassword({ name, value, visible, placeholder, label, onChange, onT
 // ─── COMPONENTE PRINCIPAL ─────────────────────────────────────────────────────
 export default function PerfilOperador({ rolActivo = 'ADMINISTRADOR' }) {
 
-  // Perfil en estado — inicia con el mock del rol activo
-  const mockInicial = PERFILES_MOCK[rolActivo] ?? PERFILES_MOCK.ADMINISTRADOR
-  const [perfil, setPerfil] = useState(mockInicial)
+  // Perfil en estado — inicia con los datos de la sesión y se completa con el backend
+  const perfilInicial = (() => {
+    let u = {}
+    try { u = JSON.parse(localStorage.getItem('siscvi_usuario') || '{}') } catch { /* sesión vacía */ }
+    return {
+      nombre:   u.PERSON_NO ? `${u.PERSON_NO} ${u.PERSON_AP ?? ''}`.trim() : (u.USUARI_NO ?? '—'),
+      cedula:   '—',
+      email:    u.USUARI_EM ?? '',
+      rol:      rolActivo,
+      ingreso:  '',
+      telefono: '—',
+    }
+  })()
+  const [perfil, setPerfil] = useState(perfilInicial)
 
-  // Actualizar el perfil mock si cambia el rol (p.ej. desde el toggle de prueba)
-  useEffect(() => {
-    const nuevoMock = PERFILES_MOCK[rolActivo] ?? PERFILES_MOCK.ADMINISTRADOR
-    setPerfil(nuevoMock)
-    setCorreoNuevo(nuevoMock.email)
-  }, [rolActivo])
-
-  // Intentar cargar el perfil real del backend
+  // Cargar el perfil real del backend
   useEffect(() => {
     const cargarPerfil = async () => {
       try {
-        const res = await fetch('/api/auth/perfil', {
-          headers: { 'Authorization': `Bearer ${localStorage.getItem('sisvic_token') ?? ''}` },
-        })
-        if (res.ok) {
-          const datos = await res.json()
-          setPerfil(prev => ({ ...prev, ...datos }))
-          if (datos.email) setCorreoNuevo(datos.email)
-        }
-      } catch { /* usa perfil mock del rol activo */ }
+        const { data: datos } = await api.get('/auth/perfil')
+        setPerfil(prev => ({
+          ...prev,
+          nombre:   datos.nombre    ?? prev.nombre,
+          email:    datos.email     ?? prev.email,
+          cedula:   datos.PERSON_CE ?? '—',
+          telefono: datos.PERSON_TL ?? '—',
+          ingreso:  (datos.USUARI_FE ?? '').toString().slice(0, 10) || prev.ingreso,
+        }))
+        if (datos.email) setCorreoNuevo(datos.email)
+        if (datos.PERSON_TL) setTelefonoNuevo(datos.PERSON_TL)
+      } catch { /* se mantienen los datos de la sesión */ }
     }
     cargarPerfil()
   }, [rolActivo])
 
   // ── Estado formulario de correo ───────────────────────────────────────────────
-  const [correoNuevo,     setCorreoNuevo]     = useState(mockInicial.email)
+  const [correoNuevo,     setCorreoNuevo]     = useState(perfilInicial.email)
   const [guardandoCorreo, setGuardandoCorreo] = useState(false)
   const [mensajeCorreo,   setMensajeCorreo]   = useState(null)
+
+  // ── Estado formulario de teléfono ─────────────────────────────────────────────
+  const [telefonoNuevo,     setTelefonoNuevo]     = useState('')
+  const [guardandoTelefono, setGuardandoTelefono] = useState(false)
+  const [mensajeTelefono,   setMensajeTelefono]   = useState(null)
 
   // ── Estado formulario de contraseña ──────────────────────────────────────────
   const [passwords,         setPasswords]         = useState({ actual: '', nueva: '', confirmar: '' })
@@ -165,20 +150,29 @@ export default function PerfilOperador({ rolActivo = 'ADMINISTRADOR' }) {
     if (!correoNuevo.trim()) return
     setGuardandoCorreo(true)
     try {
-      await fetch('/api/auth/perfil/email', {
-        method:  'PATCH',
-        headers: {
-          'Content-Type':  'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('sisvic_token') ?? ''}`,
-        },
-        body: JSON.stringify({ email: correoNuevo }),
-      })
+      await api.patch('/auth/perfil/email', { email: correoNuevo })
       setPerfil(p => ({ ...p, email: correoNuevo }))
       mostrarMsg(setMensajeCorreo, 'exito', 'Correo electrónico actualizado correctamente.')
-    } catch {
-      mostrarMsg(setMensajeCorreo, 'error', 'Sin conexión con el servidor.')
+    } catch (err) {
+      mostrarMsg(setMensajeCorreo, 'error', err.response?.data?.mensaje ?? 'Sin conexión con el servidor.')
     } finally {
       setGuardandoCorreo(false)
+    }
+  }
+
+  // ── Actualizar teléfono ───────────────────────────────────────────────────────
+  const actualizarTelefono = async (e) => {
+    e.preventDefault()
+    if (!telefonoNuevo.trim()) return
+    setGuardandoTelefono(true)
+    try {
+      const { data } = await api.patch('/auth/perfil/telefono', { telefono: telefonoNuevo.trim() })
+      setPerfil(p => ({ ...p, telefono: data.PERSON_TL ?? telefonoNuevo.trim() }))
+      mostrarMsg(setMensajeTelefono, 'exito', 'Teléfono de contacto actualizado correctamente.')
+    } catch (err) {
+      mostrarMsg(setMensajeTelefono, 'error', err.response?.data?.mensaje ?? 'Sin conexión con el servidor.')
+    } finally {
+      setGuardandoTelefono(false)
     }
   }
 
@@ -195,23 +189,12 @@ export default function PerfilOperador({ rolActivo = 'ADMINISTRADOR' }) {
     }
     setGuardandoPassword(true)
     try {
-      const res = await fetch('/api/auth/perfil/password', {
-        method:  'PATCH',
-        headers: {
-          'Content-Type':  'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('sisvic_token') ?? ''}`,
-        },
-        body: JSON.stringify({ actual: passwords.actual, nueva: passwords.nueva }),
-      })
-      if (res.ok) {
-        mostrarMsg(setMensajePassword, 'exito', 'Contraseña actualizada correctamente.')
-        setPasswords({ actual: '', nueva: '', confirmar: '' })
-      } else {
-        const datos = await res.json().catch(() => ({}))
-        mostrarMsg(setMensajePassword, 'error', datos.mensaje ?? 'Contraseña actual incorrecta.')
-      }
-    } catch {
-      mostrarMsg(setMensajePassword, 'error', 'Sin conexión con el servidor.')
+      await api.patch('/auth/perfil/password', { actual: passwords.actual, nueva: passwords.nueva })
+      mostrarMsg(setMensajePassword, 'exito', 'Contraseña actualizada correctamente.')
+      setPasswords({ actual: '', nueva: '', confirmar: '' })
+    } catch (err) {
+      mostrarMsg(setMensajePassword, 'error',
+        err.response ? (err.response.data?.mensaje ?? 'Contraseña actual incorrecta.') : 'Sin conexión con el servidor.')
     } finally {
       setGuardandoPassword(false)
     }
@@ -293,13 +276,41 @@ export default function PerfilOperador({ rolActivo = 'ADMINISTRADOR' }) {
               className={eInput}
             />
             <p className="text-[11px] text-gray-400 font-medium mt-1.5">
-              El sistema enviará una confirmación al nuevo correo antes de aplicar el cambio.
+              A este correo llegará el código para recuperar su contraseña si la olvida: verifique que esté bien escrito.
             </p>
           </div>
           <div className="flex justify-end">
             <button type="submit" disabled={guardandoCorreo || !correoNuevo.trim()} className={eBoton}>
               <Save className="w-4 h-4" />
               {guardandoCorreo ? 'Guardando...' : 'Guardar Correo'}
+            </button>
+          </div>
+        </form>
+      </div>
+
+      {/* ── Actualizar teléfono ── */}
+      <div className={eCard + ' p-6'}>
+        <p className={eSec}><Phone className="w-3.5 h-3.5" /> Actualizar Teléfono de Contacto</p>
+
+        <Toast msg={mensajeTelefono} />
+
+        <form onSubmit={actualizarTelefono} className="space-y-4">
+          <div>
+            <label className={eLabel}>Nuevo Teléfono</label>
+            <input
+              type="tel"
+              required
+              maxLength={15}
+              value={telefonoNuevo}
+              onChange={e => setTelefonoNuevo(e.target.value)}
+              placeholder="0414-1234567"
+              className={eInput}
+            />
+          </div>
+          <div className="flex justify-end">
+            <button type="submit" disabled={guardandoTelefono || !telefonoNuevo.trim()} className={eBoton}>
+              <Save className="w-4 h-4" />
+              {guardandoTelefono ? 'Guardando...' : 'Guardar Teléfono'}
             </button>
           </div>
         </form>

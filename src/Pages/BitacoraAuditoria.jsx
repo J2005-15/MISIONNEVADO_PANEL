@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import api from '../lib/api'
+import ModalExportarReporte from './ModalExportarReporte'
 import {
   Search, Clock, User, Activity, Shield,
   AlertTriangle, CheckCircle, Package, Database,
@@ -7,34 +8,37 @@ import {
   Stethoscope, FileText, Users, Download, XCircle,
 } from 'lucide-react'
 
-// ─── MOCK DATA — TT_BITACORA ──────────────────────────────────────────────────
-
-const eventosAuditoria = [
-  { id:  1, timestamp: '2026-06-10 08:14:32', usuario: 'admin@misionnevado.gob.ve',     rol: 'ADMINISTRADOR', modulo: 'Acceso',          accion: 'Inicio de sesión exitoso',                                tipo: 'INFO'    },
-  { id:  2, timestamp: '2026-06-10 08:21:05', usuario: 'mgonzalez@misionnevado.gob.ve', rol: 'VETERINARIO',   modulo: 'Acceso',          accion: 'Inicio de sesión exitoso',                                tipo: 'INFO'    },
-  { id:  3, timestamp: '2026-06-10 08:35:47', usuario: 'mgonzalez@misionnevado.gob.ve', rol: 'VETERINARIO',   modulo: 'Censo Animal',    accion: 'Registro de nuevo paciente — Luna (Canino)',              tipo: 'INFO'    },
-  { id:  4, timestamp: '2026-06-10 09:02:18', usuario: 'mgonzalez@misionnevado.gob.ve', rol: 'VETERINARIO',   modulo: 'Consulta Médica', accion: 'Nueva consulta creada — Paciente: Zeus',                  tipo: 'INFO'    },
-  { id:  5, timestamp: '2026-06-10 09:15:44', usuario: 'admin@misionnevado.gob.ve',     rol: 'ADMINISTRADOR', modulo: 'Logística',       accion: 'Actualización de existencia — Suero Fisiológico',         tipo: 'INFO'    },
-  { id:  6, timestamp: '2026-06-10 09:30:12', usuario: 'acceso_desconocido',             rol: 'N/A',           modulo: 'Acceso',          accion: 'Intento de inicio de sesión fallido — credenciales inválidas', tipo: 'ALERTA'  },
-  { id:  7, timestamp: '2026-06-10 09:31:05', usuario: 'acceso_desconocido',             rol: 'N/A',           modulo: 'Acceso',          accion: 'Segundo intento fallido desde la misma IP',               tipo: 'ALERTA'  },
-  { id:  8, timestamp: '2026-06-10 09:31:59', usuario: 'acceso_desconocido',             rol: 'N/A',           modulo: 'Acceso',          accion: '3.er intento fallido — dirección IP bloqueada temporalmente', tipo: 'CRÍTICO' },
-  { id:  9, timestamp: '2026-06-10 09:48:22', usuario: 'admin@misionnevado.gob.ve',     rol: 'ADMINISTRADOR', modulo: 'Usuarios',        accion: 'Nuevo usuario creado — cperez@misionnevado.gob.ve',       tipo: 'INFO'    },
-  { id: 10, timestamp: '2026-06-10 10:05:33', usuario: 'admin@misionnevado.gob.ve',     rol: 'ADMINISTRADOR', modulo: 'Denuncias',       accion: 'Denuncia #2026-004 cerrada — Maltrato animal resuelto',   tipo: 'INFO'    },
-  { id: 11, timestamp: '2026-06-10 10:22:14', usuario: 'mgonzalez@misionnevado.gob.ve', rol: 'VETERINARIO',   modulo: 'Logística',       accion: 'Consumo de suministro registrado — Amoxicilina 500 mg (3 cáps.)', tipo: 'INFO' },
-  { id: 12, timestamp: '2026-06-10 10:45:07', usuario: 'sistema@siscvi',                rol: 'SISTEMA',       modulo: 'Logística',       accion: 'Alerta automática — Vacuna Antirrábica alcanzó stock mínimo', tipo: 'ALERTA' },
-  { id: 13, timestamp: '2026-06-10 11:03:55', usuario: 'jblanco@misionnevado.gob.ve',   rol: 'AUXILIAR',      modulo: 'Censo Animal',    accion: 'Datos actualizados — Paciente Rocky (V-15234890)',        tipo: 'INFO'    },
-  { id: 14, timestamp: '2026-06-10 11:28:40', usuario: 'admin@misionnevado.gob.ve',     rol: 'ADMINISTRADOR', modulo: 'Sistema',         accion: 'Respaldo de base de datos ejecutado correctamente',        tipo: 'INFO'    },
-  { id: 15, timestamp: '2026-06-10 12:10:18', usuario: 'mgonzalez@misionnevado.gob.ve', rol: 'VETERINARIO',   modulo: 'Consulta Médica', accion: 'Récipe impreso — Paciente: Mia (consulta #0015)',         tipo: 'INFO'    },
-  { id: 16, timestamp: '2026-06-10 13:05:29', usuario: 'admin@misionnevado.gob.ve',     rol: 'ADMINISTRADOR', modulo: 'Usuarios',        accion: 'Permisos modificados — lrios@misionnevado.gob.ve',        tipo: 'ALERTA'  },
-  { id: 17, timestamp: '2026-06-10 13:47:52', usuario: 'jblanco@misionnevado.gob.ve',   rol: 'AUXILIAR',      modulo: 'Censo Animal',    accion: 'Registro de nuevo paciente — Tobi (Felino)',              tipo: 'INFO'    },
-  { id: 18, timestamp: '2026-06-10 14:22:11', usuario: 'admin@misionnevado.gob.ve',     rol: 'ADMINISTRADOR', modulo: 'Denuncias',       accion: 'Nueva denuncia registrada — Abandono sector Centro',      tipo: 'INFO'    },
-  { id: 19, timestamp: '2026-06-10 15:00:00', usuario: 'sistema@siscvi',                rol: 'SISTEMA',       modulo: 'Sistema',         accion: 'Verificación automática de sesiones activas completada',  tipo: 'INFO'    },
-  { id: 20, timestamp: '2026-06-10 15:33:44', usuario: 'mgonzalez@misionnevado.gob.ve', rol: 'VETERINARIO',   modulo: 'Acceso',          accion: 'Cierre de sesión',                                        tipo: 'INFO'    },
-]
-
 // ─── CONFIGURACIÓN DE MÓDULOS ─────────────────────────────────────────────────
 
 const MODULOS_FILTRO = ['Todos', 'Acceso', 'Censo Animal', 'Consulta Médica', 'Logística', 'Usuarios', 'Denuncias', 'Sistema']
+
+// ─── NORMALIZAR EVENTO DE TH_AUDIT → forma que usa esta vista ────────────────
+// Los módulos se agrupan en las categorías del filtro; el resto cae en 'Sistema'.
+const MODULO_POR_CODIGO = {
+  'Acceso': 'Acceso', 'Autenticación': 'Acceso',
+  'CENSO_ANIMAL': 'Censo Animal',
+  'VETERINARIA': 'Consulta Médica', 'Consultas': 'Consulta Médica',
+  'INVENTARIO': 'Logística',
+  'Usuarios': 'Usuarios',
+  'DENUNCIAS': 'Denuncias', 'DENUNCIAS_ADMIN': 'Denuncias', 'Denuncias': 'Denuncias',
+}
+const ROL_POR_ID = { 1: 'Administrador', 2: 'Veterinario', 3: 'Personal de Campo' }
+
+const formatearMarcaTiempo = (valor) => {
+  const d = new Date(valor)
+  if (Number.isNaN(d.getTime())) return valor ?? ''
+  const dos = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${dos(d.getMonth() + 1)}-${dos(d.getDate())} ${dos(d.getHours())}:${dos(d.getMinutes())}:${dos(d.getSeconds())}`
+}
+
+const normalizarEvento = (ev) => ({
+  ...ev,
+  modulo:    MODULO_POR_CODIGO[ev.modulo] ?? 'Sistema',
+  tipo:      ev.tipo === 'CRITICO' ? 'CRÍTICO' : ev.tipo,
+  usuario:   ev.usuario || 'Visitante web',
+  rol:       ROL_POR_ID[ev.rol] ?? ev.rol ?? '—',
+  timestamp: formatearMarcaTiempo(ev.timestamp),
+})
 
 const ICONO_MODULO = {
   'Acceso':          Shield,
@@ -73,16 +77,17 @@ const EVENTOS_POR_PAGINA = 8
 // ─── COMPONENTE PRINCIPAL ────────────────────────────────────────────────────
 
 export default function BitacoraAuditoria() {
-  const [eventos,      setEventos]      = useState(eventosAuditoria)
+  const [eventos,      setEventos]      = useState([])
   const [busqueda,     setBusqueda]     = useState('')
   const [filtroModulo, setFiltroModulo] = useState('Todos')
   const [paginaActual, setPagina]       = useState(1)
+  const [modalReporte, setModalReporte] = useState(false)
 
   useEffect(() => {
     api.get('/bitacora?limite=200')
       .then(r => {
         const datos = r.data.registros ?? []
-        if (datos.length) setEventos(datos)
+        setEventos(datos.map(normalizarEvento))
       })
       .catch(() => {})
   }, [])
@@ -119,7 +124,9 @@ export default function BitacoraAuditoria() {
             Auditoría completa de eventos, accesos y operaciones — SISCVI · Misión Nevado
           </p>
         </div>
-        <button className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-[#765A05] bg-[#FFDF96]/20 hover:bg-[#FFDF96]/40 border border-[#FFDF96]/40 rounded-xl transition-colors shadow-sm">
+        <button
+          onClick={() => setModalReporte(true)}
+          className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-[#765A05] bg-[#FFDF96]/20 hover:bg-[#FFDF96]/40 border border-[#FFDF96]/40 rounded-xl transition-colors shadow-sm">
           <Download className="w-4 h-4" />
           Exportar Reporte
         </button>
@@ -330,6 +337,8 @@ export default function BitacoraAuditoria() {
           </button>
         </div>
       </div>
+
+      {modalReporte && <ModalExportarReporte onCerrar={() => setModalReporte(false)} />}
 
     </div>
   )

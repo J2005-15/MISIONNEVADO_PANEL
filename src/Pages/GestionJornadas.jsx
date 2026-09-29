@@ -2,9 +2,10 @@ import { useState, useEffect, useCallback } from 'react'
 import {
   Calendar, MapPin, Plus, Search, CalendarDays, Save, X,
   CheckCircle, Clock, FileText, AlertTriangle, Trash2,
-  ChevronLeft, ChevronRight, ClipboardList,
+  ChevronLeft, ChevronRight, ClipboardList, Pencil,
 } from 'lucide-react'
 import api from '../lib/api'
+import confirmarConClave from '../lib/confirmarConClave'
 
 // ─── ESTILOS COMPARTIDOS ──────────────────────────────────────────────────────
 const eInput = 'w-full px-3.5 py-2.5 text-sm text-gray-900 border border-gray-400 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-[#765A05]/20 focus:border-[#765A05] transition-all placeholder-gray-500'
@@ -71,10 +72,18 @@ function BadgeEstado({ JORNAD_ES, JORNAD_FE }) {
   )
 }
 
-// ─── MODAL: NUEVA JORNADA ─────────────────────────────────────────────────────
-function ModalNuevaJornada({ sectores, onGuardar, onCerrar }) {
+// ─── MODAL: NUEVA JORNADA / EDITAR JORNADA ───────────────────────────────────
+// Con `jornada` se abre en modo edición con sus datos cargados.
+function ModalNuevaJornada({ sectores, jornada = null, onGuardar, onCerrar }) {
   const FORM_VACIO = { SECTOR_ID: '', JORNAD_NO: '', JORNAD_FE: '', JORNAD_LU: '', JORNAD_DE: '' }
-  const [datos,    setDatos]    = useState({ ...FORM_VACIO })
+  const esEdicion = !!jornada
+  const [datos,    setDatos]    = useState(esEdicion ? {
+    SECTOR_ID: jornada.SECTOR_ID != null ? String(jornada.SECTOR_ID) : '',
+    JORNAD_NO: jornada.JORNAD_NO ?? '',
+    JORNAD_FE: jornada.JORNAD_FE ?? '',
+    JORNAD_LU: jornada.JORNAD_LU ?? '',
+    JORNAD_DE: jornada.JORNAD_DE ?? '',
+  } : { ...FORM_VACIO })
   const [guardando, setGuardando] = useState(false)
   const [error,    setError]    = useState('')
 
@@ -86,10 +95,11 @@ function ModalNuevaJornada({ sectores, onGuardar, onCerrar }) {
     setError('')
     setGuardando(true)
     try {
-      await api.post('/jornadas', datos)
+      if (esEdicion) await api.put(`/jornadas/${jornada.JORNAD_ID}`, datos)
+      else           await api.post('/jornadas', datos)
       onGuardar()
     } catch (err) {
-      setError(err.response?.data?.mensaje ?? 'Error al planificar la jornada')
+      setError(err.response?.data?.mensaje ?? (esEdicion ? 'Error al modificar la jornada' : 'Error al planificar la jornada'))
     } finally {
       setGuardando(false)
     }
@@ -106,7 +116,7 @@ function ModalNuevaJornada({ sectores, onGuardar, onCerrar }) {
               <Calendar className="w-5 h-5 text-[#765A05]" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-gray-900">Planificar Nueva Jornada</h3>
+              <h3 className="text-sm font-bold text-gray-900">{esEdicion ? 'Editar Jornada' : 'Planificar Nueva Jornada'}</h3>
               <p className="text-xs text-gray-400">Módulo TT_JORNAD</p>
             </div>
           </div>
@@ -141,7 +151,7 @@ function ModalNuevaJornada({ sectores, onGuardar, onCerrar }) {
             <div>
               <label className={eLabel}>Fecha Planificada *</label>
               <input type="date" name="JORNAD_FE" required
-                min={new Date().toISOString().slice(0, 10)}
+                min={esEdicion ? undefined : new Date().toISOString().slice(0, 10)}
                 value={datos.JORNAD_FE} onChange={cambiar} className={eInput} />
             </div>
           </div>
@@ -167,7 +177,7 @@ function ModalNuevaJornada({ sectores, onGuardar, onCerrar }) {
             <button type="submit" disabled={guardando}
               className="flex items-center gap-2 px-6 py-2.5 bg-[#765A05] hover:bg-[#5a4304] disabled:opacity-60 text-white text-sm font-bold rounded-xl transition-colors shadow-sm">
               <Save className="w-4 h-4" />
-              {guardando ? 'Guardando...' : 'Planificar Jornada'}
+              {guardando ? 'Guardando...' : (esEdicion ? 'Guardar Cambios' : 'Planificar Jornada')}
             </button>
           </div>
         </form>
@@ -276,10 +286,30 @@ export default function GestionJornadas({ rolActivo = 'ADMINISTRADOR' }) {
   const [busqueda,       setBusqueda]       = useState('')
   const [modalNuevo,     setModalNuevo]     = useState(false)
   const [modalOperacion, setModalOperacion] = useState(null)
+  const [jornadaEditar,  setJornadaEditar]  = useState(null)
   const [pagina,         setPagina]         = useState(1)
 
   const esAdmin = rolActivo === 'ADMINISTRADOR'
   const esVet   = rolActivo === 'VETERINARIO'
+
+  // Los hooks van antes del bloqueo por rol: React exige el mismo orden en cada render
+  const cargarDatos = useCallback(async () => {
+    setCargando(true)
+    try {
+      const [rJornadas, rSectores] = await Promise.all([
+        api.get('/jornadas'),
+        api.get('/catalogos/sectores'),
+      ])
+      setJornadas((rJornadas.data.registros ?? []).map(normalizarJornada))
+      setSectores(rSectores.data.registros ?? [])
+    } catch (err) {
+      console.error('Error al cargar jornadas:', err.message)
+    } finally {
+      setCargando(false)
+    }
+  }, [])
+
+  useEffect(() => { if (esAdmin || esVet) cargarDatos() }, [cargarDatos, esAdmin, esVet])
 
   // Bloqueo total para Personal de Campo
   if (!esAdmin && !esVet) {
@@ -298,24 +328,6 @@ export default function GestionJornadas({ rolActivo = 'ADMINISTRADOR' }) {
       </div>
     )
   }
-
-  const cargarDatos = useCallback(async () => {
-    setCargando(true)
-    try {
-      const [rJornadas, rSectores] = await Promise.all([
-        api.get('/jornadas'),
-        api.get('/catalogos/sectores'),
-      ])
-      setJornadas((rJornadas.data.registros ?? []).map(normalizarJornada))
-      setSectores(rSectores.data.registros ?? [])
-    } catch (err) {
-      console.error('Error al cargar jornadas:', err.message)
-    } finally {
-      setCargando(false)
-    }
-  }, [])
-
-  useEffect(() => { cargarDatos() }, [cargarDatos])
 
   const jornadasFiltradas = jornadas.filter(j => {
     const q = busqueda.toLowerCase()
@@ -338,13 +350,19 @@ export default function GestionJornadas({ rolActivo = 'ADMINISTRADOR' }) {
     setPagina(1)
   }
 
+  const guardarEdicion = async () => {
+    setJornadaEditar(null)
+    await cargarDatos()
+  }
+
   const borrarJornada = async (id) => {
-    try {
-      await api.delete(`/jornadas/${id}`)
-      setJornadas(prev => prev.filter(j => j.JORNAD_ID !== id))
-    } catch (err) {
-      console.error('Error al eliminar jornada:', err.message)
-    }
+    const j = jornadas.find(x => x.JORNAD_ID === id)
+    const eliminado = await confirmarConClave({
+      titulo:  'Eliminar Jornada',
+      mensaje: `¿Eliminar la jornada "${j?.JORNAD_NO ?? ''}"?`,
+      accion:  (clave) => api.delete(`/jornadas/${id}`, { data: { clave } }),
+    })
+    if (eliminado) setJornadas(prev => prev.filter(x => x.JORNAD_ID !== id))
   }
 
   const totalRealizadas   = jornadas.filter(j => j.JORNAD_ES === 'FINALIZADA').length
@@ -494,6 +512,14 @@ export default function GestionJornadas({ rolActivo = 'ADMINISTRADOR' }) {
                       )}
                       {esAdmin && (
                         <button
+                          onClick={() => setJornadaEditar(j)}
+                          className="flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-[#765A05] hover:bg-[#FFDF96]/20 border border-gray-200 hover:border-[#FFDF96]/40 px-2.5 py-1.5 rounded-lg transition-all whitespace-nowrap cursor-pointer">
+                          <Pencil className="w-3.5 h-3.5" />
+                          Editar
+                        </button>
+                      )}
+                      {esAdmin && (
+                        <button
                           onClick={() => borrarJornada(j.JORNAD_ID)}
                           className="flex items-center gap-1.5 text-xs font-medium text-red-500 hover:text-red-700 hover:bg-red-50 border border-transparent hover:border-red-100 px-2.5 py-1.5 rounded-lg transition-all whitespace-nowrap cursor-pointer">
                           <Trash2 className="w-3.5 h-3.5" />
@@ -543,11 +569,21 @@ export default function GestionJornadas({ rolActivo = 'ADMINISTRADOR' }) {
         />
       )}
 
+      {/* ── MODAL: EDITAR JORNADA ─────────────────────────────────────────────── */}
+      {jornadaEditar && (
+        <ModalNuevaJornada
+          sectores={sectores}
+          jornada={jornadaEditar}
+          onGuardar={guardarEdicion}
+          onCerrar={() => setJornadaEditar(null)}
+        />
+      )}
+
       {/* ── MODAL: REGISTRAR OPERATIVO (VETERINARIO) ──────────────────────────── */}
       {modalOperacion && (
         <ModalRegistrarOperacion
           jornada={modalOperacion}
-          onGuardar={() => { setModalOperacion(null) }}
+          onGuardar={async () => { setModalOperacion(null); await cargarDatos() }}
           onCerrar={() => setModalOperacion(null)}
         />
       )}

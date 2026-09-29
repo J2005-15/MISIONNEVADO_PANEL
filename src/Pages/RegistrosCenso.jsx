@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react'
 import { Search, Plus, Eye, Pencil, Trash2, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
 import api from '../lib/api'
+import confirmarConClave from '../lib/confirmarConClave'
 
 // ─── COMPONENTE PRINCIPAL ───────────────────────────────────────────────────
 
 // eslint-disable-next-line no-unused-vars
-export default function RegistrosCenso({ setVistaActual, registros: _ignorado = [], onVerFicha, rolActivo = 'ADMINISTRADOR' }) {
+export default function RegistrosCenso({ setVistaActual, registros: _ignorado = [], onVerFicha, onEditar, rolActivo = 'ADMINISTRADOR' }) {
   const esAdmin = rolActivo === 'ADMINISTRADOR'
   const [busqueda,     setBusqueda] = useState('')
   const [paginaActual, setPagina]   = useState(1)
@@ -18,7 +19,6 @@ export default function RegistrosCenso({ setVistaActual, registros: _ignorado = 
       try {
         setCargando(true)
         const { data } = await api.get('/censo')
-        console.log('== VALIDACIÓN SISCVI: Datos del Censo recibidos desde Neon ==', data.registros)
         setRegistros(data.registros || [])
       } catch (error) {
         setErrorCarga(error.response?.data?.mensaje || 'Error al cargar los registros del censo')
@@ -54,9 +54,23 @@ export default function RegistrosCenso({ setVistaActual, registros: _ignorado = 
   const totalPaginas = Math.max(1, Math.ceil(registrosFiltrados.length / LIMIT))
   const registrosPaginados = registrosFiltrados.slice((paginaActual - 1) * LIMIT, paginaActual * LIMIT)
 
-  const verDetalle = (r) => console.log('VER DETALLE:', r)
-  const editar     = (r) => console.log('EDITAR:', r)
-  const eliminar   = (r) => console.log('ELIMINAR cédula:', r.ID_PERSON)
+  const verDetalle = (r) => onVerFicha?.(r)
+  const editar     = (r) => onEditar?.(r)   // abre el formulario del censo con el registro cargado
+
+  const eliminar = async (r) => {
+    const eliminado = await confirmarConClave({
+      titulo:  'Eliminar del Censo',
+      mensaje: `¿Eliminar del censo a ${r.nom_anima} (dueño ${r.person_ce})?`,
+      accion:  (clave) => api.delete(`/censo/${r.censoa_id}`, { data: { clave } }),
+    })
+    if (eliminado) setRegistros(prev => prev.filter(x => x.censoa_id !== r.censoa_id))
+  }
+
+  // 'YYYY-MM-DD' → dd/mm/aaaa sin pasar por Date (evita correrse un día por zona horaria)
+  const fechaCorta = (f) => {
+    const [a, m, d] = String(f ?? '').slice(0, 10).split('-')
+    return a && m && d ? `${d}/${m}/${a}` : ''
+  }
 
   return (
     <div className="space-y-5">
@@ -118,19 +132,19 @@ export default function RegistrosCenso({ setVistaActual, registros: _ignorado = 
           <tbody className="divide-y divide-gray-100/50">
             {registrosPaginados.length > 0 ? (
               registrosPaginados.map((r, index) => (
-                <tr key={index} className="hover:bg-white/50 transition-colors">
+                <tr key={r.censoa_id ?? index} className="hover:bg-white/50 transition-colors">
                   <td className="px-6 py-4 text-gray-500 font-medium">{r.person_ce}</td>
                   <td className="px-6 py-4 font-bold text-gray-900">{r.nom_anima}</td>
                   {/* TEXTO DE RAZA (CORREGIDO AL COLOR #765A05) */}
-                  <td className="px-6 py-4 text-[#765A05] font-semibold">{r.razare_id}</td>
-                  <td className="px-6 py-4 text-gray-600">{r.sector_id}</td>
-                  <td className="px-6 py-4 text-gray-500 text-xs">{r.fec_censo ? new Date(r.fec_censo).toLocaleDateString() : ''}</td>
+                  <td className="px-6 py-4 text-[#765A05] font-semibold">{r.razare_no ?? r.razare_id ?? '—'}</td>
+                  <td className="px-6 py-4 text-gray-600">{r.sector_no ?? r.sector_id}</td>
+                  <td className="px-6 py-4 text-gray-500 text-xs">{fechaCorta(r.fec_censo)}</td>
 
                   {/* Botones de acción */}
                   <td className="px-6 py-4">
                     <div className="flex items-center justify-end gap-1.5">
                       <button
-                        onClick={() => onVerFicha ? onVerFicha(r) : verDetalle(r)}
+                        onClick={() => verDetalle(r)}
                         title="Ver ficha del paciente"
                         className="flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-[#765A05] hover:bg-[#FFDF96]/20 border border-gray-200 hover:border-[#FFDF96]/40 px-2.5 py-1.5 rounded-lg transition-all whitespace-nowrap cursor-pointer"
                       >
